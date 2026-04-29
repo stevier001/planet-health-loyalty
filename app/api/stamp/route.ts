@@ -2,7 +2,7 @@
 
 import { NextResponse } from "next/server";
 
-export async function GET(req: Request) {
+export async function GET(req: any) {
   try {
     const { searchParams } = new URL(req.url);
     const cid = searchParams.get("cid");
@@ -18,7 +18,6 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "Missing Shopify config" }, { status: 500 });
     }
 
-    // 1. Get customer metafields
     const metafieldRes = await fetch(
       `https://${shop}/admin/api/2024-01/customers/${cid}/metafields.json`,
       {
@@ -30,7 +29,6 @@ export async function GET(req: Request) {
 
     const metafieldsData = await metafieldRes.json();
 
-    // 2. Find loyalty.stamps metafield
     const stampsField = metafieldsData.metafields?.find(
       (m: any) => m.namespace === "loyalty" && m.key === "stamps"
     );
@@ -38,7 +36,6 @@ export async function GET(req: Request) {
     const currentStamps = stampsField ? parseInt(stampsField.value) : 0;
     const newStamps = currentStamps + 1;
 
-    // 3. Update metafield
     const updateRes = await fetch(
       `https://${shop}/admin/api/2024-01/customers/${cid}/metafields.json`,
       {
