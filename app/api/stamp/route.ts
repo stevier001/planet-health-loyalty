@@ -8,4 +8,4 @@ export async function GET(req: Request) {
     success: true,
     customer_id: cid
   }); 
-}
+} 
