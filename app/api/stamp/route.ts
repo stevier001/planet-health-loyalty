@@ -7,5 +7,5 @@ export async function GET(req: Request) {
   return NextResponse.json({
     success: true,
     customer_id: cid
-  });
+  }); 
 }
