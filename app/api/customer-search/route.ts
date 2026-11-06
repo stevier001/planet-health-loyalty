@@ -1,5 +1,7 @@
+
 import { NextRequest, NextResponse } from "next/server";
 import { verifyStaffSession } from "../../../lib/staff-auth";
+
 export const runtime = "nodejs";
 
 export async function GET(request: NextRequest) {
@@ -48,11 +50,58 @@ export async function GET(request: NextRequest) {
       throw new Error("Shopify authentication failed");
     }
 
-    const searchTerm = term.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+    let graphqlQuery: string;
+    let variables: Record<string, string>;
 
-    const searchQuery = term.includes("@")
-      ? `email:${searchTerm}`
-      : `first_name:${searchTerm}* OR last_name:${searchTerm}* OR email:${searchTerm}`;
+    // QR code / numeric Shopify customer ID lookup
+    if (/^\d+$/.test(term)) {
+      graphqlQuery = `
+        query SearchCustomerById($id: ID!) {
+          node(id: $id) {
+            ... on Customer {
+              id
+              firstName
+              lastName
+              email
+              metafield(namespace: "loyalty", key: "stamps") {
+                value
+              }
+            }
+          }
+        }
+      `;
+
+      variables = {
+        id: `gid://shopify/Customer/${term}`,
+      };
+    } else {
+      // Normal name or email search
+      const searchTerm = term
+        .replace(/\\/g, "\\\\")
+        .replace(/"/g, '\\"');
+
+      const searchQuery = term.includes("@")
+        ? `email:${searchTerm}`
+        : `first_name:${searchTerm}* OR last_name:${searchTerm}* OR email:${searchTerm}`;
+
+      graphqlQuery = `
+        query SearchCustomers($query: String!) {
+          customers(first: 10, query: $query) {
+            nodes {
+              id
+              firstName
+              lastName
+              email
+              metafield(namespace: "loyalty", key: "stamps") {
+                value
+              }
+            }
+          }
+        }
+      `;
+
+      variables = { query: searchQuery };
+    }
 
     const shopifyResponse = await fetch(
       `https://${shop}/admin/api/2026-04/graphql.json`,
@@ -63,22 +112,8 @@ export async function GET(request: NextRequest) {
           "X-Shopify-Access-Token": tokenData.access_token,
         },
         body: JSON.stringify({
-          query: `
-            query SearchCustomers($query: String!) {
-              customers(first: 10, query: $query) {
-                nodes {
-                  id
-                  firstName
-                  lastName
-                  email
-                  metafield(namespace: "loyalty", key: "stamps") {
-                    value
-                  }
-                }
-              }
-            }
-          `,
-          variables: { query: searchQuery },
+          query: graphqlQuery,
+          variables,
         }),
         cache: "no-store",
       }
@@ -90,7 +125,13 @@ export async function GET(request: NextRequest) {
       throw new Error("Customer search failed");
     }
 
-    const customers = result.data.customers.nodes.map((customer: any) => ({
+    const foundCustomers = /^\d+$/.test(term)
+      ? result.data?.node
+        ? [result.data.node]
+        : []
+      : result.data?.customers?.nodes || [];
+
+    const customers = foundCustomers.map((customer: any) => ({
       id: customer.id,
       firstName: customer.firstName || "",
       lastName: customer.lastName || "",
@@ -101,10 +142,16 @@ export async function GET(request: NextRequest) {
       ),
     }));
 
-    return NextResponse.json({ success: true, customers });
+    return NextResponse.json({
+      success: true,
+      customers,
+    });
   } catch {
     return NextResponse.json(
-      { success: false, message: "Unable to search Shopify customers" },
+      {
+        success: false,
+        message: "Unable to search Shopify customers",
+      },
       { status: 500 }
     );
   }
