@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useEffect, useState } from "react";
@@ -13,16 +12,17 @@ type Customer = {
 
 export default function StaffPage() {
   const [pin, setPin] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [checking, setChecking] = useState(true);
   const [authenticated, setAuthenticated] = useState(false);
+  const [checking, setChecking] = useState(true);
+  const [loginLoading, setLoginLoading] = useState(false);
   const [error, setError] = useState("");
 
   const [search, setSearch] = useState("");
-  const [searching, setSearching] = useState(false);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [selected, setSelected] = useState<Customer | null>(null);
-  const [addingStamp, setAddingStamp] = useState(false);
+
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [stampLoading, setStampLoading] = useState(false);
   const [message, setMessage] = useState("");
 
   useEffect(() => {
@@ -44,7 +44,7 @@ export default function StaffPage() {
 
   async function handleLogin(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    setLoading(true);
+    setLoginLoading(true);
     setError("");
 
     try {
@@ -57,7 +57,7 @@ export default function StaffPage() {
       const data = await response.json();
 
       if (!response.ok || !data.success) {
-        setError(data.message || "Incorrect PIN. Please try again.");
+        setError(data.message || "Incorrect PIN.");
         return;
       }
 
@@ -66,30 +66,35 @@ export default function StaffPage() {
     } catch {
       setError("Connection error. Please try again.");
     } finally {
-      setLoading(false);
+      setLoginLoading(false);
     }
   }
 
   async function handleLogout() {
-    await fetch("/api/staff-logout", { method: "POST" });
-    setAuthenticated(false);
-    setSelected(null);
-    setCustomers([]);
-    setSearch("");
+    try {
+      await fetch("/api/staff-logout", { method: "POST" });
+    } finally {
+      setAuthenticated(false);
+      setSelected(null);
+      setCustomers([]);
+      setSearch("");
+      setMessage("");
+    }
   }
 
-  async function handleSearch(e: React.FormEvent<HTMLFormElement>) {
+  async function searchCustomers(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
 
     if (search.trim().length < 2) {
-      setError("Enter at least 2 characters.");
+      setError("Please enter at least 2 characters.");
       return;
     }
 
-    setSearching(true);
+    setSearchLoading(true);
     setError("");
     setMessage("");
     setSelected(null);
+    setCustomers([]);
 
     try {
       const response = await fetch(
@@ -99,8 +104,15 @@ export default function StaffPage() {
 
       const data = await response.json();
 
+      if (response.status === 401) {
+        setAuthenticated(false);
+        setError("Your staff session has expired. Please log in again.");
+        return;
+      }
+
       if (!response.ok || !data.success) {
-        throw new Error(data.message || "Customer search failed.");
+        setError(data.message || "Customer search failed.");
+        return;
       }
 
       setCustomers(data.customers || []);
@@ -108,28 +120,19 @@ export default function StaffPage() {
       if (!data.customers?.length) {
         setMessage("No customers found. Try another search.");
       }
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Unable to search customers."
-      );
-      setCustomers([]);
+    } catch {
+      setError("Unable to connect to Shopify.");
     } finally {
-      setSearching(false);
+      setSearchLoading(false);
     }
   }
 
-  async function handleAddStamp() {
-    if (!selected || addingStamp || selected.stamps >= 6) return;
+  async function addStamp() {
+    if (!selected || stampLoading || selected.stamps >= 6) return;
 
-    const confirmed = window.confirm(
-      `Add one loyalty stamp to ${selected.firstName} ${selected.lastName}?`
-    );
-
-    if (!confirmed) return;
-
-    setAddingStamp(true);
-    setMessage("");
+    setStampLoading(true);
     setError("");
+    setMessage("");
 
     try {
       const response = await fetch("/api/stamp", {
@@ -140,8 +143,15 @@ export default function StaffPage() {
 
       const data = await response.json();
 
+      if (response.status === 401) {
+        setAuthenticated(false);
+        setError("Your staff session has expired. Please log in again.");
+        return;
+      }
+
       if (!response.ok || !data.success) {
-        throw new Error(data.message || "Unable to add stamp.");
+        setError(data.message || "Unable to add stamp.");
+        return;
       }
 
       const updatedCustomer = {
@@ -159,18 +169,20 @@ export default function StaffPage() {
         )
       );
 
-      setMessage(data.message);
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Unable to add stamp."
-      );
+      setMessage(data.message || "Stamp successfully added.");
+    } catch {
+      setError("Unable to save stamp. Please try again.");
     } finally {
-      setAddingStamp(false);
+      setStampLoading(false);
     }
   }
 
   if (checking) {
-    return <main style={styles.page}>LOADING STAFF PORTAL...</main>;
+    return (
+      <main style={styles.page}>
+        <div style={styles.card}>LOADING STAFF PORTAL...</div>
+      </main>
+    );
   }
 
   if (!authenticated) {
@@ -211,10 +223,10 @@ export default function StaffPage() {
 
             <button
               type="submit"
-              disabled={loading || !pin}
+              disabled={loginLoading || !pin}
               style={styles.button}
             >
-              {loading ? "CHECKING..." : "ACCESS STAFF PORTAL →"}
+              {loginLoading ? "CHECKING..." : "ACCESS STAFF PORTAL →"}
             </button>
           </form>
 
@@ -232,7 +244,7 @@ export default function StaffPage() {
             <div style={styles.logo}>
               PLANET HEALTH<span style={styles.green}>.</span>
             </div>
-            <div style={styles.eyebrow}>STAFF CONTROL PANEL</div>
+            <div style={styles.eyebrow}>LOYALTY CONTROL PANEL</div>
           </div>
 
           <button onClick={handleLogout} style={styles.logout}>
@@ -240,33 +252,41 @@ export default function StaffPage() {
           </button>
         </header>
 
-        <h1 style={styles.heading}>
-          GOOD FOOD.
-          <br />
-          <span style={styles.green}>GOOD REWARDS.</span>
-        </h1>
+        <section style={{ marginBottom: 28 }}>
+          <div style={styles.eyebrow}>WELCOME TO THE LOYALTY HUB</div>
 
-        <p style={styles.description}>
-          Find a customer and manage their loyalty stamps.
-        </p>
+          <h1 style={styles.heading}>
+            GOOD FOOD.
+            <br />
+            <span style={styles.green}>GOOD REWARDS.</span>
+          </h1>
+
+          <p style={styles.description}>
+            Find a customer, view their loyalty card and add a stamp.
+          </p>
+        </section>
 
         <section style={styles.section}>
           <h2 style={styles.sectionTitle}>FIND A CUSTOMER</h2>
 
-          <form onSubmit={handleSearch}>
+          <p style={styles.smallText}>
+            Search by customer name or email address.
+          </p>
+
+          <form onSubmit={searchCustomers}>
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Customer name or email..."
+              placeholder="Enter name or email..."
               style={styles.input}
             />
 
             <button
               type="submit"
-              disabled={searching || search.trim().length < 2}
+              disabled={searchLoading || search.trim().length < 2}
               style={styles.button}
             >
-              {searching ? "SEARCHING..." : "SEARCH CUSTOMERS →"}
+              {searchLoading ? "SEARCHING SHOPIFY..." : "SEARCH CUSTOMERS →"}
             </button>
           </form>
 
@@ -274,10 +294,8 @@ export default function StaffPage() {
           {message && <p style={styles.message}>{message}</p>}
 
           {customers.length > 0 && (
-            <div style={styles.results}>
-              <div style={styles.resultHeading}>
-                SEARCH RESULTS ({customers.length})
-              </div>
+            <div style={{ marginTop: 22 }}>
+              <div style={styles.label}>SEARCH RESULTS</div>
 
               {customers.map((customer) => (
                 <button
@@ -288,21 +306,21 @@ export default function StaffPage() {
                     setError("");
                   }}
                   style={{
-                    ...styles.customer,
-                    borderColor:
-                      selected?.id === customer.id ? "#45e017" : "#ddd",
+                    ...styles.customerButton,
+                    background:
+                      selected?.id === customer.id ? "#B4FF00" : "#fff",
                   }}
                 >
                   <span>
                     <strong>
                       {customer.firstName} {customer.lastName}
                     </strong>
-                    <small>{customer.email}</small>
+                    <span style={styles.customerEmail}>
+                      {customer.email}
+                    </span>
                   </span>
 
-                  <span style={styles.customerStamps}>
-                    {customer.stamps}/6 →
-                  </span>
+                  <strong>{customer.stamps}/6</strong>
                 </button>
               ))}
             </div>
@@ -311,31 +329,33 @@ export default function StaffPage() {
 
         {selected && (
           <section style={styles.loyaltyCard}>
-            <div style={styles.eyebrow}>CUSTOMER LOYALTY CARD</div>
+            <div style={styles.eyebrowGreen}>CUSTOMER LOYALTY CARD</div>
 
             <h2 style={styles.customerName}>
               {selected.firstName} {selected.lastName}
             </h2>
 
-            <p style={styles.customerEmail}>{selected.email}</p>
+            <p style={styles.customerEmail}>
+              {selected.email}
+            </p>
 
-            <div style={styles.stampGrid}>
-              {Array.from({ length: 6 }, (_, index) => {
-                const earned = index < selected.stamps;
+            <h2 style={styles.sectionTitleWhite}>YOUR REWARDS</h2>
 
-                return (
-                  <div
-                    key={index}
-                    style={{
-                      ...styles.stamp,
-                      background: earned ? "#B4FF00" : "transparent",
-                      color: earned ? "#111" : "#fff",
-                    }}
-                  >
-                    {earned ? "✓" : index + 1}
-                  </div>
-                );
-              })}
+            <div style={styles.stampRow}>
+              {[1, 2, 3, 4, 5, 6].map((number) => (
+                <div
+                  key={number}
+                  style={{
+                    ...styles.stamp,
+                    background:
+                      number <= selected.stamps ? "#B4FF00" : "transparent",
+                    color:
+                      number <= selected.stamps ? "#111" : "#fff",
+                  }}
+                >
+                  {number <= selected.stamps ? "✓" : number}
+                </div>
+              ))}
             </div>
 
             <div style={styles.stampCount}>
@@ -344,21 +364,21 @@ export default function StaffPage() {
 
             {selected.stamps >= 6 ? (
               <div style={styles.reward}>
-                🎉 REWARD UNLOCKED!
-                <p>This customer has earned their reward.</p>
+                <strong>REWARD UNLOCKED!</strong>
+                <p>This customer has collected all 6 stamps.</p>
               </div>
             ) : (
               <button
-                onClick={handleAddStamp}
-                disabled={addingStamp}
+                onClick={addStamp}
+                disabled={stampLoading}
                 style={styles.button}
               >
-                {addingStamp ? "SAVING STAMP..." : "ADD STAMP +"}
+                {stampLoading ? "SAVING STAMP..." : "ADD STAMP +"}
               </button>
             )}
 
             <p style={styles.cardNote}>
-              Stamps are saved directly to Shopify.
+              Stamps are saved directly to the customer's Shopify record.
             </p>
           </section>
         )}
@@ -379,47 +399,51 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontFamily: "Arial, sans-serif",
     display: "flex",
     justifyContent: "center",
-    alignItems: "center",
-    padding: "25px 18px",
+    padding: "35px 18px",
     boxSizing: "border-box",
-  },
-  dashboard: {
-    width: "100%",
-    maxWidth: "650px",
-    margin: "auto",
   },
   card: {
     width: "100%",
     maxWidth: "460px",
+    alignSelf: "center",
     background: "#fff",
     border: "2px solid #111",
     borderRadius: "22px",
     padding: "30px",
     boxSizing: "border-box",
   },
+  dashboard: {
+    width: "100%",
+    maxWidth: "760px",
+  },
   header: {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
-    gap: "15px",
-    marginBottom: "35px",
+    gap: 15,
+    flexWrap: "wrap",
+    marginBottom: 45,
   },
   logo: {
     fontSize: "23px",
     fontWeight: 900,
     letterSpacing: "-1px",
   },
-  green: {
-    color: "#45e017",
-  },
+  green: { color: "#45e017" },
   eyebrow: {
     marginTop: "12px",
     fontSize: "11px",
-    fontWeight: 800,
+    fontWeight: 900,
+    letterSpacing: "2px",
+  },
+  eyebrowGreen: {
+    color: "#B4FF00",
+    fontSize: "12px",
+    fontWeight: 900,
     letterSpacing: "2px",
   },
   heading: {
-    fontSize: "clamp(36px, 8vw, 54px)",
+    fontSize: "clamp(38px, 8vw, 58px)",
     lineHeight: 1,
     margin: "15px 0",
     fontWeight: 900,
@@ -434,18 +458,30 @@ const styles: { [key: string]: React.CSSProperties } = {
     background: "#fff",
     border: "2px solid #111",
     borderRadius: "18px",
-    padding: "22px",
-    marginBottom: "20px",
+    padding: "25px",
+    marginBottom: "22px",
   },
   sectionTitle: {
-    fontSize: "17px",
+    fontSize: "19px",
+    fontWeight: 900,
     marginTop: 0,
+  },
+  sectionTitleWhite: {
+    fontSize: "20px",
+    fontWeight: 900,
+    marginTop: 30,
+    color: "#fff",
+  },
+  smallText: {
+    fontSize: "13px",
+    color: "#666",
   },
   label: {
     display: "block",
-    fontSize: "12px",
+    fontSize: "11px",
     fontWeight: 900,
     marginBottom: "9px",
+    letterSpacing: "1px",
   },
   input: {
     width: "100%",
@@ -454,129 +490,105 @@ const styles: { [key: string]: React.CSSProperties } = {
     border: "2px solid #111",
     borderRadius: "10px",
     fontSize: "16px",
+    marginTop: "10px",
     marginBottom: "12px",
   },
   button: {
     width: "100%",
-    padding: "17px",
+    padding: "18px",
     background: "#B4FF00",
+    color: "#111",
     border: "2px solid #111",
     borderRadius: "10px",
-    fontSize: "14px",
     fontWeight: 900,
+    fontSize: "14px",
+    cursor: "pointer",
+    marginTop: "10px",
+  },
+  logout: {
+    padding: "12px 18px",
+    background: "#fff",
+    border: "2px solid #111",
+    borderRadius: "10px",
+    fontWeight: 900,
+    cursor: "pointer",
+  },
+  customerButton: {
+    width: "100%",
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 12,
+    textAlign: "left",
+    padding: "15px",
+    border: "1px solid #111",
+    borderRadius: "10px",
+    marginTop: "9px",
     cursor: "pointer",
     color: "#111",
   },
-  logout: {
-    padding: "12px 16px",
-    background: "#fff",
-    border: "2px solid #111",
-    borderRadius: "9px",
-    fontWeight: 900,
-    cursor: "pointer",
-  },
-  results: {
-    marginTop: "22px",
-  },
-  resultHeading: {
-    fontSize: "11px",
-    fontWeight: 900,
-    letterSpacing: "1.5px",
-    marginBottom: "10px",
-  },
-  customer: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: "12px",
-    width: "100%",
-    padding: "15px",
-    background: "#fff",
-    border: "2px solid #ddd",
-    borderRadius: "10px",
-    marginBottom: "9px",
-    textAlign: "left",
-    cursor: "pointer",
-  },
-  customerStamps: {
-    fontWeight: 900,
-    whiteSpace: "nowrap",
-  },
-  customerName: {
-    fontSize: "25px",
-    marginBottom: "5px",
-  },
   customerEmail: {
-    color: "#aaa",
-    fontSize: "13px",
+    display: "block",
+    fontSize: "12px",
+    color: "#999",
+    marginTop: "5px",
     overflowWrap: "anywhere",
-  },
-  customer: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: "12px",
-    width: "100%",
-    padding: "15px",
-    background: "#fff",
-    border: "2px solid #ddd",
-    borderRadius: "10px",
-    marginBottom: "9px",
-    textAlign: "left",
-    cursor: "pointer",
-  },
-  stampGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(3, 1fr)",
-    gap: "14px",
-    maxWidth: "270px",
-    margin: "28px auto",
-  },
-  stamp: {
-    width: "100%",
-    aspectRatio: "1",
-    border: "2px solid #B4FF00",
-    borderRadius: "50%",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontSize: "23px",
-    fontWeight: 900,
-  },
-  stampCount: {
-    textAlign: "center",
-    fontSize: "17px",
-    fontWeight: 900,
-    marginBottom: "22px",
   },
   loyaltyCard: {
     background: "#111",
     color: "#fff",
     borderRadius: "18px",
     padding: "25px",
-    marginBottom: "20px",
+    marginBottom: "22px",
+  },
+  customerName: {
+    fontSize: "25px",
+    marginBottom: "5px",
+  },
+  stampRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: "8px",
+    margin: "25px 0",
+  },
+  stamp: {
+    width: "48px",
+    height: "48px",
+    flex: "1 1 0",
+    maxWidth: "58px",
+    border: "2px solid #B4FF00",
+    borderRadius: "50%",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontWeight: 900,
+    fontSize: "17px",
+  },
+  stampCount: {
+    color: "#B4FF00",
+    fontWeight: 900,
+    marginBottom: "15px",
   },
   reward: {
     background: "#B4FF00",
     color: "#111",
-    padding: "20px",
-    borderRadius: "12px",
-    textAlign: "center",
-    fontWeight: 900,
+    padding: "18px",
+    borderRadius: "10px",
+    marginTop: "15px",
   },
   cardNote: {
     color: "#aaa",
-    textAlign: "center",
     fontSize: "11px",
     marginTop: "18px",
-  },
-  message: {
-    color: "#267a12",
-    fontSize: "13px",
-    fontWeight: 700,
+    lineHeight: 1.5,
   },
   error: {
     color: "#c22",
+    fontSize: "13px",
+    fontWeight: 700,
+  },
+  message: {
+    color: "#257b16",
     fontSize: "13px",
     fontWeight: 700,
   },
