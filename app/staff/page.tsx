@@ -76,7 +76,9 @@ export default function StaffPage() {
 
             // Our customer QR codes should contain a numeric ID
             if (!/^\d+$/.test(qrNumber)) {
-              setScannerError("This QR code doesn't contain a valid customer number.");
+              setScannerError(
+                "This QR code doesn't contain a valid customer number."
+              );
               return;
             }
 
@@ -738,6 +740,9 @@ const styles: { [key: string]: React.CSSProperties } = {
     borderRadius: "18px",
     padding: "25px",
     marginBottom: "22px",
+    boxSizing: "border-box",
+    width: "100%",
+    minWidth: 0,
   },
   customerName: {
     fontSize: "25px",
@@ -745,33 +750,34 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   stampRow: {
     display: "grid",
-    gridTemplateColumns: "repeat(6, 56px)",
+    gridTemplateColumns: "repeat(6, minmax(0, 1fr))",
     justifyContent: "space-between",
     alignItems: "center",
-    gap: "4px",
+    gap: "6px",
     margin: "25px 0",
     width: "100%",
+    minWidth: 0,
+    boxSizing: "border-box",
   },
   stamp: {
-    width: "56px",
-    height: "56px",
-    minWidth: "56px",
-    minHeight: "56px",
-    maxWidth: "56px",
-    maxHeight: "56px",
-    flex: "0 0 56px",
+    width: "100%",
+    height: "auto",
+    minWidth: 0,
+    minHeight: 0,
+    maxWidth: "none",
+    maxHeight: "none",
     boxSizing: "border-box",
+    aspectRatio: "1 / 1",
     border: "2px solid #B4FF00",
     borderRadius: "50%",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
     fontWeight: 900,
-    fontSize: "17px",
+    fontSize: "clamp(12px, 4vw, 17px)",
     lineHeight: 1,
     padding: 0,
     margin: 0,
-    aspectRatio: "1 / 1",
   },
   stampCount: {
     color: "#B4FF00",
