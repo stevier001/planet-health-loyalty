@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifyStaffSession } from "@/lib/staff-auth";
-
+import { verifyStaffSession } from "../../../lib/staff-auth";
 export const runtime = "nodejs";
 
 export async function GET(request: NextRequest) {
