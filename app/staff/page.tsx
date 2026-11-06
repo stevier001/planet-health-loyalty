@@ -26,6 +26,10 @@ export default function StaffPage() {
   const [stampLoading, setStampLoading] = useState(false);
   const [message, setMessage] = useState("");
 
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [scannerError, setScannerError] = useState("");
+
+  // Check staff login session
   useEffect(() => {
     async function checkSession() {
       try {
@@ -42,6 +46,93 @@ export default function StaffPage() {
 
     checkSession();
   }, []);
+
+  // QR camera scanner
+  useEffect(() => {
+    if (!scannerOpen || !authenticated) return;
+
+    let scanner: any = null;
+    let cancelled = false;
+
+    async function startScanner() {
+      try {
+        const { Html5Qrcode } = await import("html5-qrcode");
+
+        if (cancelled) return;
+
+        scanner = new Html5Qrcode("qr-reader");
+
+        await scanner.start(
+          { facingMode: "environment" },
+          {
+            fps: 10,
+            qrbox: { width: 250, height: 250 },
+            aspectRatio: 1,
+          },
+          async (decodedText: string) => {
+            if (cancelled) return;
+
+            const qrNumber = decodedText.trim();
+
+            // Our customer QR codes should contain a numeric ID
+            if (!/^\d+$/.test(qrNumber)) {
+              setScannerError("This QR code doesn't contain a valid customer number.");
+              return;
+            }
+
+            // Stop the camera and close the scanner
+            cancelled = true;
+
+            try {
+              if (scanner?.isScanning) {
+                await scanner.stop();
+              }
+              scanner?.clear();
+            } catch {
+              // Scanner may already have stopped
+            }
+
+            setScannerOpen(false);
+            setScannerError("");
+
+            // Automatically search for the customer
+            await searchCustomerTerm(qrNumber);
+          },
+          () => {
+            // Ignore normal camera scanning misses
+          }
+        );
+      } catch (err) {
+        if (!cancelled) {
+          setScannerError(
+            "Unable to access the camera. Please allow camera permission and try again."
+          );
+          setScannerOpen(false);
+        }
+      }
+    }
+
+    startScanner();
+
+    return () => {
+      cancelled = true;
+
+      if (scanner) {
+        const stopScanner = async () => {
+          try {
+            if (scanner.isScanning) {
+              await scanner.stop();
+            }
+            scanner.clear();
+          } catch {
+            // Camera may already be stopped
+          }
+        };
+
+        stopScanner();
+      }
+    };
+  }, [scannerOpen, authenticated]);
 
   async function handleLogin(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -72,6 +163,8 @@ export default function StaffPage() {
   }
 
   async function handleLogout() {
+    setScannerOpen(false);
+
     try {
       await fetch("/api/staff-logout", { method: "POST" });
     } finally {
@@ -83,10 +176,9 @@ export default function StaffPage() {
     }
   }
 
-  async function searchCustomers(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-
-    if (search.trim().length < 2) {
+  // Shared customer search for manual searches and QR scans
+  async function searchCustomerTerm(term: string) {
+    if (term.trim().length < 2) {
       setError("Please enter at least 2 characters.");
       return;
     }
@@ -96,10 +188,11 @@ export default function StaffPage() {
     setMessage("");
     setSelected(null);
     setCustomers([]);
+    setSearch(term);
 
     try {
       const response = await fetch(
-        `/api/customer-search?q=${encodeURIComponent(search.trim())}`,
+        `/api/customer-search?q=${encodeURIComponent(term.trim())}`,
         { cache: "no-store" }
       );
 
@@ -120,12 +213,19 @@ export default function StaffPage() {
 
       if (!data.customers?.length) {
         setMessage("No customers found. Try another search.");
+      } else if (/^\d+$/.test(term.trim())) {
+        setMessage("QR code scanned successfully. Select the customer below.");
       }
     } catch {
       setError("Unable to connect to Shopify.");
     } finally {
       setSearchLoading(false);
     }
+  }
+
+  async function searchCustomers(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    await searchCustomerTerm(search);
   }
 
   async function addStamp() {
@@ -267,18 +367,63 @@ export default function StaffPage() {
           </p>
         </section>
 
+        {/* QR CODE SCANNER */}
+        <section style={styles.scannerSection}>
+          <div style={styles.scannerHeading}>
+            <div>
+              <div style={styles.eyebrow}>QUICK CUSTOMER LOOKUP</div>
+              <h2 style={styles.scannerTitle}>SCAN QR CODE</h2>
+            </div>
+            <div style={styles.scannerIcon}>▦</div>
+          </div>
+
+          <p style={styles.smallText}>
+            Scan the QR code on a customer's loyalty card to find their account.
+          </p>
+
+          {!scannerOpen ? (
+            <button
+              onClick={() => {
+                setScannerError("");
+                setError("");
+                setMessage("");
+                setScannerOpen(true);
+              }}
+              style={styles.scanButton}
+            >
+              ▦ &nbsp; SCAN CUSTOMER QR CODE
+            </button>
+          ) : (
+            <>
+              <div id="qr-reader" style={styles.qrReader} />
+
+              <button
+                onClick={() => setScannerOpen(false)}
+                style={styles.cancelScan}
+              >
+                CLOSE CAMERA
+              </button>
+            </>
+          )}
+
+          {scannerError && (
+            <p style={styles.error}>{scannerError}</p>
+          )}
+        </section>
+
+        {/* MANUAL CUSTOMER SEARCH */}
         <section style={styles.section}>
           <h2 style={styles.sectionTitle}>FIND A CUSTOMER</h2>
 
           <p style={styles.smallText}>
-            Search by customer name or email address.
+            Search by customer name, email address or QR code number.
           </p>
 
           <form onSubmit={searchCustomers}>
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Enter name or email..."
+              placeholder="Enter name, email or QR number..."
               style={styles.input}
             />
 
@@ -328,6 +473,7 @@ export default function StaffPage() {
           )}
         </section>
 
+        {/* CUSTOMER LOYALTY CARD */}
         {selected && (
           <section style={styles.loyaltyCard}>
             <div style={styles.eyebrowGreen}>CUSTOMER LOYALTY CARD</div>
@@ -460,6 +606,58 @@ const styles: { [key: string]: React.CSSProperties } = {
     padding: "25px",
     marginBottom: "22px",
   },
+  scannerSection: {
+    background: "#fff",
+    border: "2px solid #111",
+    borderRadius: "18px",
+    padding: "25px",
+    marginBottom: "22px",
+  },
+  scannerHeading: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 12,
+  },
+  scannerTitle: {
+    fontSize: "25px",
+    fontWeight: 900,
+    margin: "10px 0",
+  },
+  scannerIcon: {
+    fontSize: "42px",
+    fontWeight: 900,
+    color: "#111",
+  },
+  scanButton: {
+    width: "100%",
+    padding: "20px",
+    background: "#B4FF00",
+    color: "#111",
+    border: "2px solid #111",
+    borderRadius: "10px",
+    fontWeight: 900,
+    fontSize: "15px",
+    cursor: "pointer",
+    marginTop: "12px",
+  },
+  qrReader: {
+    width: "100%",
+    marginTop: "18px",
+    overflow: "hidden",
+    borderRadius: "12px",
+  },
+  cancelScan: {
+    width: "100%",
+    padding: "15px",
+    background: "#fff",
+    color: "#111",
+    border: "2px solid #111",
+    borderRadius: "10px",
+    fontWeight: 900,
+    cursor: "pointer",
+    marginTop: "12px",
+  },
   sectionTitle: {
     fontSize: "19px",
     fontWeight: 900,
@@ -474,6 +672,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   smallText: {
     fontSize: "13px",
     color: "#666",
+    lineHeight: 1.6,
   },
   label: {
     display: "block",
@@ -544,8 +743,6 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontSize: "25px",
     marginBottom: "5px",
   },
-
-  // Six fixed-size circles. They cannot stretch into ovals.
   stampRow: {
     display: "grid",
     gridTemplateColumns: "repeat(6, 56px)",
@@ -576,7 +773,6 @@ const styles: { [key: string]: React.CSSProperties } = {
     margin: 0,
     aspectRatio: "1 / 1",
   },
-
   stampCount: {
     color: "#B4FF00",
     fontWeight: 900,
