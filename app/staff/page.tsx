@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useEffect, useState } from "react";
@@ -335,9 +336,7 @@ export default function StaffPage() {
               {selected.firstName} {selected.lastName}
             </h2>
 
-            <p style={styles.customerEmail}>
-              {selected.email}
-            </p>
+            <p style={styles.customerEmail}>{selected.email}</p>
 
             <h2 style={styles.sectionTitleWhite}>YOUR REWARDS</h2>
 
@@ -546,16 +545,18 @@ const styles: { [key: string]: React.CSSProperties } = {
     marginBottom: "5px",
   },
   stampRow: {
-    display: "flex",
-    justifyContent: "space-between",
+    display: "grid",
+    gridTemplateColumns: "repeat(6, minmax(0, 1fr))",
     gap: "8px",
+    alignItems: "center",
+    justifyItems: "center",
     margin: "25px 0",
   },
   stamp: {
-    width: "48px",
-    height: "48px",
-    flex: "1 1 0",
+    width: "100%",
     maxWidth: "58px",
+    aspectRatio: "1 / 1",
+    boxSizing: "border-box",
     border: "2px solid #B4FF00",
     borderRadius: "50%",
     display: "flex",
