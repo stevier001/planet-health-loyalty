@@ -1,11 +1,58 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { verifyStaffSession } from "../../../lib/staff-auth";
+
 export const runtime = "nodejs";
+
+async function recordActivity(
+  customerId: string,
+  stamps: number,
+  eventTypes: string[]
+) {
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !serviceKey) {
+    console.error("Supabase environment variables are missing");
+    return;
+  }
+
+  const rows = eventTypes.map((eventType) => ({
+    customer_id: customerId,
+    event_type: eventType,
+    metadata: {
+      stamps,
+      source: "staff_portal",
+    },
+  }));
+
+  try {
+    const response = await fetch(
+      `${supabaseUrl.replace(/\/$/, "")}/rest/v1/loyalty_activity`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: serviceKey,
+          Authorization: `Bearer ${serviceKey}`,
+          Prefer: "return=minimal",
+        },
+        body: JSON.stringify(rows),
+        cache: "no-store",
+      }
+    );
+
+    if (!response.ok) {
+      const error = await response.text();
+      console.error("Supabase activity logging failed:", error);
+    }
+  } catch (error) {
+    console.error("Supabase activity logging error:", error);
+  }
+}
 
 export async function POST(request: NextRequest) {
   try {
-    // Only authenticated staff can award stamps.
     if (!verifyStaffSession(request)) {
       return NextResponse.json(
         { success: false, message: "Staff access required" },
@@ -34,7 +81,6 @@ export async function POST(request: NextRequest) {
       throw new Error("Shopify settings are missing");
     }
 
-    // Get a Shopify access token.
     const tokenResponse = await fetch(
       `https://${shop}/admin/oauth/access_token`,
       {
@@ -63,7 +109,6 @@ export async function POST(request: NextRequest) {
       "X-Shopify-Access-Token": tokenData.access_token,
     };
 
-    // Retrieve the customer's current stamp count.
     const customerResponse = await fetch(endpoint, {
       method: "POST",
       headers,
@@ -95,9 +140,7 @@ export async function POST(request: NextRequest) {
 
     const currentStamps = Math.max(
       0,
-      Number(
-        customerData.data.customer.metafield?.value || 0
-      ) || 0
+      Number(customerData.data.customer.metafield?.value || 0) || 0
     );
 
     if (currentStamps >= 6) {
@@ -111,7 +154,6 @@ export async function POST(request: NextRequest) {
 
     const newStamps = currentStamps + 1;
 
-    // Save the new stamp count to Shopify.
     const saveResponse = await fetch(endpoint, {
       method: "POST",
       headers,
@@ -154,6 +196,16 @@ export async function POST(request: NextRequest) {
       throw new Error("Unable to save customer stamp");
     }
 
+    // Record the successful activity in Supabase.
+    // Shopify remains the source of truth for stamp balances.
+    const events = ["stamp_awarded"];
+
+    if (newStamps === 6) {
+      events.push("reward_unlocked");
+    }
+
+    await recordActivity(customerId, newStamps, events);
+
     return NextResponse.json({
       success: true,
       stamps: newStamps,
@@ -163,7 +215,9 @@ export async function POST(request: NextRequest) {
           ? "Reward unlocked!"
           : "Stamp successfully added.",
     });
-  } catch {
+  } catch (error) {
+    console.error("Stamp API error:", error);
+
     return NextResponse.json(
       {
         success: false,
