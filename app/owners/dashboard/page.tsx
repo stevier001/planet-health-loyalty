@@ -113,7 +113,7 @@ export default function OwnersDashboard() {
         </header>
 
         <section style={styles.intro}>
-          <p style={styles.eyebrow}>THE BIG PICTURE</p>
+          <p style={{ ...styles.eyebrow, color: "#111111" }}>THE BIG PICTURE</p>
           <h1 style={styles.heading}>
             YOUR BUSINESS.
             <br />
