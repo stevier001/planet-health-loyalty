@@ -117,7 +117,7 @@ export default function OwnersDashboard() {
           <h1 style={styles.heading}>
             YOUR BUSINESS.
             <br />
-            <span style={{ color: "#B4FF00" }}>YOUR LOYALTY.</span>
+            <span style={{ color: "#45e017" }}>YOUR LOYALTY.</span>
           </h1>
           <p style={styles.description}>
             Your live overview of the Planet Health loyalty programme.
