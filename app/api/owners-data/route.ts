@@ -193,7 +193,35 @@ export async function GET(request: NextRequest) {
 
     const activity: ActivityRecord[] =
       await activityResponse.json();
+// Get the lifetime total of all stamps awarded.
+const stampCountResponse = await fetch(
+  `${supabaseUrl.replace(/\/$/, "")}/rest/v1/loyalty_activity?select=id&event_type=eq.stamp_awarded`,
+  {
+    method: "GET",
+    headers: {
+      apikey: serviceKey,
+      Authorization: `Bearer ${serviceKey}`,
+      Prefer: "count=exact",
+      Range: "0-0",
+    },
+    cache: "no-store",
+  }
+);
 
+if (!stampCountResponse.ok) {
+  throw new Error("Unable to retrieve total stamps awarded");
+}
+
+const stampCountRange =
+  stampCountResponse.headers.get("content-range");
+
+if (!stampCountRange) {
+  throw new Error("Unable to read total stamps count");
+}
+
+const totalStampsAwarded = Number(
+  stampCountRange.split("/")[1]
+);
     // Match activity records with Shopify customer details.
     const customerLookup = new Map(
       dashboardCustomers.map((customer) => [
@@ -213,10 +241,11 @@ export async function GET(request: NextRequest) {
     });
 
     return NextResponse.json({
-      success: true,
-      customers: dashboardCustomers,
-      activity: dashboardActivity,
-    });
+  success: true,
+  customers: dashboardCustomers,
+  activity: dashboardActivity,
+  totalStampsAwarded,
+});
 
   } catch (error) {
     console.error("Owners dashboard API error:", error);
