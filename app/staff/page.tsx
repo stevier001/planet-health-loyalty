@@ -214,10 +214,29 @@ export default function StaffPage() {
       setCustomers(data.customers || []);
 
       if (!data.customers?.length) {
-        setMessage("No customers found. Try another search.");
-      } else if (/^\d+$/.test(term.trim())) {
-        setMessage("QR code scanned successfully. Select the customer below.");
-      }
+  setMessage("No customers found. Try another search.");
+} else if (isQrScan && /^\d+$/.test(term.trim())) {
+
+  try {
+    const scanResponse = await fetch("/api/qr-scan", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        customer_id: data.customers[0].id,
+      }),
+    });
+
+    if (!scanResponse.ok) {
+      console.error("QR scan could not be recorded.");
+    }
+  } catch (scanError) {
+    console.error("QR scan tracking error:", scanError);
+  }
+
+  setMessage("QR code scanned successfully. Select the customer below.");
+}
     } catch {
       setError("Unable to connect to Shopify.");
     } finally {
