@@ -30,7 +30,10 @@ export default function OwnersDashboard() {
   const [data, setData] = useState<DashboardData>({
     customers: [],
     activity: [],
-  });
+  }); 
+  
+  const [totalStampsAwarded, setTotalStampsAwarded] = useState(0);
+  
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -58,6 +61,7 @@ export default function OwnersDashboard() {
         customers: result.customers || [],
         activity: result.activity || [],
       });
+      setTotalStampsAwarded(Number(result.totalStampsAwarded ?? 0));
     } catch {
       setError("Unable to load business data. Please try again.");
     } finally {
