@@ -33,7 +33,7 @@ export default function OwnersDashboard() {
   }); 
   
   const [totalStampsAwarded, setTotalStampsAwarded] = useState(0);
-  
+  const [totalQrScans, setTotalQrScans] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -62,6 +62,7 @@ export default function OwnersDashboard() {
         activity: result.activity || [],
       });
       setTotalStampsAwarded(Number(result.totalStampsAwarded ?? 0));
+      setTotalQrScans(Number(result.totalQrScans ?? 0));
     } catch {
       setError("Unable to load business data. Please try again.");
     } finally {
