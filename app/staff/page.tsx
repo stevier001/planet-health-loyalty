@@ -98,7 +98,7 @@ export default function StaffPage() {
             setScannerError("");
 
             // Automatically search for the customer
-            await searchCustomerTerm(qrNumber);
+            await searchCustomerTerm(qrNumber, true);
           },
           () => {
             // Ignore normal camera scanning misses
