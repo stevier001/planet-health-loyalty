@@ -179,7 +179,7 @@ export default function StaffPage() {
   }
 
   // Shared customer search for manual searches and QR scans
-  async function searchCustomerTerm(term: string) {
+  async function searchCustomerTerm(term: string, isQrScan = false) {
     if (term.trim().length < 2) {
       setError("Please enter at least 2 characters.");
       return;
