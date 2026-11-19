@@ -142,6 +142,7 @@ export default function OwnersDashboard() {
             <section style={styles.stats}>
               <StatCard label="LOYALTY CUSTOMERS" value={totalCustomers} />
               <StatCard label="STAMPS CURRENTLY HELD" value={totalStamps} />
+              <StatCard label="TOTAL STAMPS AWARDED" value={totalStampsAwarded} />
               <StatCard label="REWARDS UNLOCKED" value={rewardsUnlocked} />
               <StatCard label="RECENT STAMPS" value={recentStamps} />
             </section>
