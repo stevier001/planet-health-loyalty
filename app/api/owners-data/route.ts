@@ -273,6 +273,7 @@ const totalQrScans = Number(
   customers: dashboardCustomers,
   activity: dashboardActivity,
   totalStampsAwarded,
+  totalQrScans,
 });
 
   } catch (error) {
