@@ -222,6 +222,34 @@ if (!stampCountRange) {
 const totalStampsAwarded = Number(
   stampCountRange.split("/")[1]
 );
+    // Get the lifetime total of QR scans.
+const qrScanResponse = await fetch(
+  `${supabaseUrl.replace(/\/$/, "")}/rest/v1/loyalty_activity?select=id&event_type=eq.qr_scan`,
+  {
+    method: "GET",
+    headers: {
+      apikey: serviceKey,
+      Authorization: `Bearer ${serviceKey}`,
+      Prefer: "count=exact",
+      Range: "0-0",
+    },
+    cache: "no-store",
+  }
+);
+
+if (!qrScanResponse.ok) {
+  throw new Error("Unable to retrieve total QR scans");
+}
+
+const qrScanRange = qrScanResponse.headers.get("content-range");
+
+if (!qrScanRange) {
+  throw new Error("Unable to read total QR scan count");
+}
+
+const totalQrScans = Number(
+  qrScanRange.split("/")[1]
+);
     // Match activity records with Shopify customer details.
     const customerLookup = new Map(
       dashboardCustomers.map((customer) => [
