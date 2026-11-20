@@ -169,7 +169,7 @@ export async function POST(request: NextRequest) {
           metafields: [
             {
               ownerId: customerGid,
-              namespace: "loyalty",
+              namespace: "custom",
               key: "member",
               type: "boolean",
               value: "true",
