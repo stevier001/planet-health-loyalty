@@ -170,7 +170,7 @@ export async function POST(request: NextRequest) {
             {
               ownerId: customerGid,
               namespace: "custom",
-              key: "member",
+              key: "loyalty_member",
               type: "boolean",
               value: "true",
             },
