@@ -24,6 +24,7 @@ export default function StaffPage() {
 
   const [searchLoading, setSearchLoading] = useState(false);
   const [stampLoading, setStampLoading] = useState(false);
+  const [redeemLoading, setRedeemLoading] = useState(false);
   const [message, setMessage] = useState("");
 
   const [scannerOpen, setScannerOpen] = useState(false);
@@ -74,7 +75,6 @@ export default function StaffPage() {
 
             const qrNumber = decodedText.trim();
 
-            // Our customer QR codes should contain a numeric ID
             if (!/^\d+$/.test(qrNumber)) {
               setScannerError(
                 "This QR code doesn't contain a valid customer number."
@@ -82,7 +82,6 @@ export default function StaffPage() {
               return;
             }
 
-            // Stop the camera and close the scanner
             cancelled = true;
 
             try {
@@ -97,7 +96,6 @@ export default function StaffPage() {
             setScannerOpen(false);
             setScannerError("");
 
-            // Automatically search for the customer
             await searchCustomerTerm(qrNumber, true);
           },
           () => {
@@ -214,29 +212,30 @@ export default function StaffPage() {
       setCustomers(data.customers || []);
 
       if (!data.customers?.length) {
-  setMessage("No customers found. Try another search.");
-} else if (isQrScan && /^\d+$/.test(term.trim())) {
+        setMessage("No customers found. Try another search.");
+      } else if (isQrScan && /^\d+$/.test(term.trim())) {
+        try {
+          const scanResponse = await fetch("/api/qr-scan", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              customer_id: data.customers[0].id,
+            }),
+          });
 
-  try {
-    const scanResponse = await fetch("/api/qr-scan", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        customer_id: data.customers[0].id,
-      }),
-    });
+          if (!scanResponse.ok) {
+            console.error("QR scan could not be recorded.");
+          }
+        } catch (scanError) {
+          console.error("QR scan tracking error:", scanError);
+        }
 
-    if (!scanResponse.ok) {
-      console.error("QR scan could not be recorded.");
-    }
-  } catch (scanError) {
-    console.error("QR scan tracking error:", scanError);
-  }
-
-  setMessage("QR code scanned successfully. Select the customer below.");
-}
+        setMessage(
+          "QR code scanned successfully. Select the customer below."
+        );
+      }
     } catch {
       setError("Unable to connect to Shopify.");
     } finally {
@@ -249,6 +248,7 @@ export default function StaffPage() {
     await searchCustomerTerm(search);
   }
 
+  // Add a stamp
   async function addStamp() {
     if (!selected || stampLoading || selected.stamps >= 6) return;
 
@@ -296,6 +296,63 @@ export default function StaffPage() {
       setError("Unable to save stamp. Please try again.");
     } finally {
       setStampLoading(false);
+    }
+  }
+
+  // Redeem a reward
+  async function redeemReward() {
+    if (!selected || redeemLoading || selected.stamps < 6) return;
+
+    const confirmed = window.confirm(
+      "Confirm that this customer has received their reward? Their six stamps will be reset to zero."
+    );
+
+    if (!confirmed) return;
+
+    setRedeemLoading(true);
+    setError("");
+    setMessage("");
+
+    try {
+      const response = await fetch("/api/redeem-reward", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ customerId: selected.id }),
+      });
+
+      const data = await response.json();
+
+      if (response.status === 401) {
+        setAuthenticated(false);
+        setError("Your staff session has expired. Please log in again.");
+        return;
+      }
+
+      if (!response.ok || !data.success) {
+        setError(data.message || "Unable to redeem reward.");
+        return;
+      }
+
+      const updatedCustomer = {
+        ...selected,
+        stamps: 0,
+      };
+
+      setSelected(updatedCustomer);
+
+      setCustomers((current) =>
+        current.map((customer) =>
+          customer.id === updatedCustomer.id
+            ? updatedCustomer
+            : customer
+        )
+      );
+
+      setMessage(data.message || "Reward successfully redeemed.");
+    } catch {
+      setError("Unable to redeem reward. Please try again.");
+    } finally {
+      setRedeemLoading(false);
     }
   }
 
@@ -532,6 +589,16 @@ export default function StaffPage() {
               <div style={styles.reward}>
                 <strong>REWARD UNLOCKED!</strong>
                 <p>This customer has collected all 6 stamps.</p>
+
+                <button
+                  onClick={redeemReward}
+                  disabled={redeemLoading}
+                  style={styles.redeemButton}
+                >
+                  {redeemLoading
+                    ? "REDEEMING REWARD..."
+                    : "REDEEM REWARD ✓"}
+                </button>
               </div>
             ) : (
               <button
@@ -723,6 +790,18 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontSize: "14px",
     cursor: "pointer",
     marginTop: "10px",
+  },
+  redeemButton: {
+    width: "100%",
+    padding: "16px",
+    background: "#111",
+    color: "#B4FF00",
+    border: "2px solid #111",
+    borderRadius: "10px",
+    fontWeight: 900,
+    fontSize: "14px",
+    cursor: "pointer",
+    marginTop: "15px",
   },
   logout: {
     padding: "12px 18px",
