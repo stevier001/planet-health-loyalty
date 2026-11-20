@@ -20,6 +20,7 @@ type ActivityRecord = {
   metadata?: {
     stamps?: number;
     inferred?: boolean;
+    source?: string;
   };
 };
 
