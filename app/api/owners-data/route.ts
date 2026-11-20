@@ -19,6 +19,7 @@ type ActivityRecord = {
   created_at: string;
   metadata?: {
     stamps?: number;
+    inferred?: boolean;
   };
 };
 
@@ -55,9 +56,7 @@ function buildBuckets(
   period: "daily" | "weekly" | "monthly",
   now: Date
 ) {
-  const count =
-    period === "daily" ? 30 : 12;
-
+  const count = period === "daily" ? 30 : 12;
   const buckets = [];
 
   for (let i = count - 1; i >= 0; i--) {
@@ -112,6 +111,7 @@ function buildBuckets(
       qr_scan: 0,
       stamp_awarded: 0,
       reward_unlocked: 0,
+      reward_unlocked_inferred: 0,
       reward_redeemed: 0,
     });
   }
@@ -136,12 +136,70 @@ function getEventBucketKey(
   ).padStart(2, "0")}`;
 }
 
+// A redemption proves a reward was unlocked.
+// If there is no matching recorded unlock for that customer,
+// add an inferred unlock on the redemption date.
+function addInferredUnlocks(records: ActivityRecord[]) {
+  const sortedRecords = [...records].sort(
+    (a, b) =>
+      new Date(a.created_at).getTime() -
+      new Date(b.created_at).getTime()
+  );
+
+  const pendingUnlocks = new Map<string, number>();
+  const result: ActivityRecord[] = [];
+  let inferredCount = 0;
+
+  for (const record of sortedRecords) {
+    if (record.event_type === "reward_unlocked") {
+      const pending =
+        pendingUnlocks.get(record.customer_id) || 0;
+
+      pendingUnlocks.set(record.customer_id, pending + 1);
+      result.push(record);
+      continue;
+    }
+
+    if (record.event_type === "reward_redeemed") {
+      const pending =
+        pendingUnlocks.get(record.customer_id) || 0;
+
+      if (pending > 0) {
+        pendingUnlocks.set(
+          record.customer_id,
+          pending - 1
+        );
+      } else {
+        result.push({
+          customer_id: record.customer_id,
+          event_type: "reward_unlocked",
+          created_at: record.created_at,
+          metadata: {
+            inferred: true,
+            source: "inferred_from_reward_redemption",
+          },
+        });
+
+        inferredCount++;
+      }
+    }
+
+    result.push(record);
+  }
+
+  return {
+    records: result,
+    inferredCount,
+  };
+}
+
 function createActivitySummary(
   records: ActivityRecord[],
   now: Date,
   period: "daily" | "weekly" | "monthly"
 ) {
   const buckets = buildBuckets(period, now);
+
   const bucketLookup = new Map(
     buckets.map((bucket) => [bucket.key, bucket])
   );
@@ -160,8 +218,17 @@ function createActivitySummary(
     const key = getEventBucketKey(eventDate, period);
     const bucket = bucketLookup.get(key);
 
-    if (bucket) {
-      bucket[record.event_type as EventType]++;
+    if (!bucket) continue;
+
+    const eventType = record.event_type as EventType;
+
+    bucket[eventType]++;
+
+    if (
+      eventType === "reward_unlocked" &&
+      record.metadata?.inferred === true
+    ) {
+      bucket.reward_unlocked_inferred++;
     }
   }
 
@@ -208,8 +275,10 @@ async function getLifetimeCount(
 
 export async function GET(request: NextRequest) {
   try {
-    // Owners only — staff cannot access business analytics.
-    const ownerSession = request.cookies.get("owners_session")?.value;
+    // Owners only.
+    const ownerSession =
+      request.cookies.get("owners_session")?.value;
+
     const sessionSecret = process.env.STAFF_SESSION_SECRET;
 
     if (
@@ -327,9 +396,8 @@ export async function GET(request: NextRequest) {
       hasNextPage = connection.pageInfo.hasNextPage;
 
       if (hasNextPage && connection.edges.length > 0) {
-        cursor = connection.edges[
-          connection.edges.length - 1
-        ].cursor;
+        cursor =
+          connection.edges[connection.edges.length - 1].cursor;
       } else {
         hasNextPage = false;
       }
@@ -390,9 +458,10 @@ export async function GET(request: NextRequest) {
     );
 
     const reportParams = new URLSearchParams({
-      select: "event_type,created_at",
+      select: "customer_id,event_type,created_at,metadata",
       created_at: `gte.${twelveMonthsAgo.toISOString()}`,
-      event_type: "in.(qr_scan,stamp_awarded,reward_unlocked,reward_redeemed)",
+      event_type:
+        "in.(qr_scan,stamp_awarded,reward_unlocked,reward_redeemed)",
       order: "created_at.asc",
     });
 
@@ -418,7 +487,8 @@ export async function GET(request: NextRequest) {
         throw new Error("Unable to retrieve activity reporting data");
       }
 
-      const page: ActivityRecord[] = await reportResponse.json();
+      const page: ActivityRecord[] =
+        await reportResponse.json();
 
       reportRecords.push(...page);
 
@@ -429,18 +499,34 @@ export async function GET(request: NextRequest) {
       reportOffset += pageSize;
     }
 
+    // Infer missing unlocks from confirmed redemptions.
+    const inferredActivity = addInferredUnlocks(reportRecords);
+
     // Create daily, weekly and monthly activity summaries.
     const activitySummary = {
-      daily: createActivitySummary(reportRecords, now, "daily"),
-      weekly: createActivitySummary(reportRecords, now, "weekly"),
-      monthly: createActivitySummary(reportRecords, now, "monthly"),
+      daily: createActivitySummary(
+        inferredActivity.records,
+        now,
+        "daily"
+      ),
+      weekly: createActivitySummary(
+        inferredActivity.records,
+        now,
+        "weekly"
+      ),
+      monthly: createActivitySummary(
+        inferredActivity.records,
+        now,
+        "monthly"
+      ),
     };
 
     // Lifetime totals.
-    const [totalStampsAwarded, totalQrScans] = await Promise.all([
-      getLifetimeCount(baseUrl, serviceKey, "stamp_awarded"),
-      getLifetimeCount(baseUrl, serviceKey, "qr_scan"),
-    ]);
+    const [totalStampsAwarded, totalQrScans] =
+      await Promise.all([
+        getLifetimeCount(baseUrl, serviceKey, "stamp_awarded"),
+        getLifetimeCount(baseUrl, serviceKey, "qr_scan"),
+      ]);
 
     // Match recent activity with Shopify customer details.
     const customerLookup = new Map(
@@ -467,6 +553,7 @@ export async function GET(request: NextRequest) {
       totalStampsAwarded,
       totalQrScans,
       activitySummary,
+      inferredRewardUnlocks: inferredActivity.inferredCount,
     });
   } catch (error) {
     console.error("Owners dashboard API error:", error);
