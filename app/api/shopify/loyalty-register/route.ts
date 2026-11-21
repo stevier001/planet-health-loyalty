@@ -20,6 +20,7 @@ function verifyShopifyProxy(request: NextRequest): boolean {
     return false;
   }
 
+  // Group duplicate query parameters
   const grouped = new Map<string, string[]>();
 
   params.forEach((value, key) => {
@@ -30,11 +31,13 @@ function verifyShopifyProxy(request: NextRequest): boolean {
     grouped.set(key, values);
   });
 
+  // Build Shopify App Proxy signature message
   const message = Array.from(grouped.entries())
-  .map(([key, values]) => `${key}=${values.join(",")}`)
-  .sort()
-  .join("");
+    .map(([key, values]) => `${key}=${values.join(",")}`)
+    .sort()
+    .join("");
 
+  // Calculate expected HMAC
   const calculated = crypto
     .createHmac("sha256", secret)
     .update(message)
@@ -56,6 +59,7 @@ function verifyShopifyProxy(request: NextRequest): boolean {
     return false;
   }
 
+  // Check timestamp
   const timestamp = Number(params.get("timestamp"));
 
   if (!Number.isFinite(timestamp)) {
@@ -70,6 +74,7 @@ function verifyShopifyProxy(request: NextRequest): boolean {
     return false;
   }
 
+  // Check Shopify store
   const expectedShop = process.env.SHOPIFY_SHOP;
   const actualShop = params.get("shop");
 
@@ -85,15 +90,20 @@ function verifyShopifyProxy(request: NextRequest): boolean {
 
 export async function POST(request: NextRequest) {
   try {
+    // Verify Shopify App Proxy request
     if (!verifyShopifyProxy(request)) {
       return NextResponse.json(
-        { success: false, message: "Invalid Shopify request" },
+        {
+          success: false,
+          message: "Invalid Shopify request",
+        },
         { status: 401 }
       );
     }
 
     const url = new URL(request.url);
 
+    // Get logged-in Shopify customer
     const customerId = url.searchParams.get(
       "logged_in_customer_id"
     );
@@ -108,6 +118,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Shopify app credentials
     const shop = process.env.SHOPIFY_SHOP;
     const clientId = process.env.SHOPIFY_API_KEY;
     const clientSecret = process.env.SHOPIFY_API_SECRET;
@@ -116,6 +127,7 @@ export async function POST(request: NextRequest) {
       throw new Error("Shopify settings are missing");
     }
 
+    // Obtain Shopify Admin API access token
     const tokenResponse = await fetch(
       `https://${shop}/admin/oauth/access_token`,
       {
@@ -135,16 +147,22 @@ export async function POST(request: NextRequest) {
     const tokenData = await tokenResponse.json();
 
     if (!tokenResponse.ok || !tokenData.access_token) {
-      console.error("Shopify token request failed:", tokenData);
+      console.error(
+        "Shopify token request failed:",
+        tokenData
+      );
+
       throw new Error("Shopify authentication failed");
     }
 
+    // Shopify GraphQL endpoint
     const endpoint =
       `https://${shop}/admin/api/2026-04/graphql.json`;
 
     const customerGid =
       `gid://shopify/Customer/${customerId}`;
 
+    // Register customer as a loyalty member
     const registrationResponse = await fetch(endpoint, {
       method: "POST",
       headers: {
@@ -198,14 +216,22 @@ export async function POST(request: NextRequest) {
           registrationData.data?.metafieldsSet?.userErrors
       );
 
-      throw new Error("Unable to register loyalty membership");
+      throw new Error(
+        "Unable to register loyalty membership"
+      );
     }
+
+    console.log(
+      "LOYALTY REGISTRATION: Customer registered",
+      customerId
+    );
 
     return NextResponse.json({
       success: true,
       registered: true,
       message: "Loyalty membership confirmed.",
     });
+
   } catch (error) {
     console.error("Loyalty registration error:", error);
 
