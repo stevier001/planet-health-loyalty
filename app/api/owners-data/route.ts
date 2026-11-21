@@ -1,8 +1,63 @@
 
 import { NextRequest, NextResponse } from "next/server";
+import { createHmac, timingSafeEqual } from "crypto";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+const SESSION_DURATION = 60 * 60 * 8;
+
+function verifyOwnerSession(
+  token: string,
+  secret: string
+): boolean {
+  try {
+    const parts = token.split(".");
+
+    if (parts.length !== 4) return false;
+
+    const [version, expiryString, nonce, suppliedSignature] =
+      parts;
+
+    if (
+      version !== "v1" ||
+      !/^\d+$/.test(expiryString) ||
+      !/^[a-f0-9]{64}$/.test(nonce) ||
+      !/^[a-f0-9]{64}$/.test(suppliedSignature)
+    ) {
+      return false;
+    }
+
+    const expires = Number(expiryString);
+    const now = Math.floor(Date.now() / 1000);
+
+    if (
+      !Number.isSafeInteger(expires) ||
+      expires <= now ||
+      expires > now + SESSION_DURATION
+    ) {
+      return false;
+    }
+
+    const payload = `owners:v1:${expires}:${nonce}`;
+
+    const expectedSignature = createHmac("sha256", secret)
+      .update(payload)
+      .digest();
+
+    const actualSignature = Buffer.from(
+      suppliedSignature,
+      "hex"
+    );
+
+    return (
+      actualSignature.length === expectedSignature.length &&
+      timingSafeEqual(actualSignature, expectedSignature)
+    );
+  } catch {
+    return false;
+  }
+}
 
 type ShopifyCustomer = {
   id: string;
@@ -281,7 +336,7 @@ async function getLifetimeCount(
 
 export async function GET(request: NextRequest) {
   try {
-    // Owners only.
+    // Verify signed, time-limited owner session.
     const ownerSession =
       request.cookies.get("owners_session")?.value;
 
@@ -290,7 +345,7 @@ export async function GET(request: NextRequest) {
     if (
       !ownerSession ||
       !sessionSecret ||
-      ownerSession !== sessionSecret
+      !verifyOwnerSession(ownerSession, sessionSecret)
     ) {
       return NextResponse.json(
         { success: false, message: "Owner access required" },
