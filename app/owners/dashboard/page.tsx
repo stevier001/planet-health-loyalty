@@ -8,6 +8,7 @@ type Customer = {
   name: string;
   email: string;
   stamps: number;
+  loyaltyMember: boolean;
 };
 
 type EventType =
@@ -46,6 +47,7 @@ type ActivitySummary = {
 type DashboardData = {
   customers: Customer[];
   activity: Activity[];
+  totalLoyaltyMembers: number;
 };
 
 type Period = "daily" | "weekly" | "monthly";
@@ -65,12 +67,12 @@ const METRICS: {
   {
     key: "qr_scan",
     label: "QR CODE SCANS",
-    description: "Successful customer QR scans",
+    description: "Customer QR codes scanned by staff",
   },
   {
     key: "stamp_awarded",
     label: "STAMPS AWARDED",
-    description: "Loyalty stamps added to customer cards",
+    description: "Loyalty stamps issued to customers",
   },
   {
     key: "reward_unlocked",
@@ -88,6 +90,7 @@ export default function OwnersDashboard() {
   const [data, setData] = useState<DashboardData>({
     customers: [],
     activity: [],
+    totalLoyaltyMembers: 0,
   });
 
   const [activitySummary, setActivitySummary] =
@@ -111,6 +114,7 @@ export default function OwnersDashboard() {
       setError("");
 
       const response = await fetch("/api/owners-data", {
+        method: "GET",
         cache: "no-store",
       });
 
@@ -130,6 +134,9 @@ export default function OwnersDashboard() {
       setData({
         customers: result.customers || [],
         activity: result.activity || [],
+        totalLoyaltyMembers: Number(
+          result.totalLoyaltyMembers ?? 0
+        ),
       });
 
       setActivitySummary({
@@ -145,9 +152,13 @@ export default function OwnersDashboard() {
       setTotalQrScans(
         Number(result.totalQrScans ?? 0)
       );
-    } catch {
+    } catch (err) {
+      console.error("Dashboard loading error:", err);
+
       setError(
-        "Unable to load business data. Please try again."
+        err instanceof Error
+          ? err.message
+          : "Unable to load dashboard"
       );
     } finally {
       setLoading(false);
@@ -166,14 +177,20 @@ export default function OwnersDashboard() {
     loadDashboard();
   }, []);
 
-  const totalCustomers = data.customers.length;
+  // Only count customers who have actually registered
+  // through the loyalty programme.
+  const totalCustomers = data.totalLoyaltyMembers;
 
-  const totalStamps = data.customers.reduce(
+  const loyaltyCustomers = data.customers.filter(
+    (customer) => customer.loyaltyMember
+  );
+
+  const totalStamps = loyaltyCustomers.reduce(
     (total, customer) => total + customer.stamps,
     0
   );
 
-  const rewardsUnlocked = data.customers.filter(
+  const rewardsUnlocked = loyaltyCustomers.filter(
     (customer) => customer.stamps >= 6
   ).length;
 
@@ -183,102 +200,31 @@ export default function OwnersDashboard() {
 
   const selectedActivity = activitySummary[period];
 
-  const periodTotals = METRICS.reduce(
-    (totals, metric) => {
-      totals[metric.key] = selectedActivity.reduce(
-        (total, bucket) => total + bucket[metric.key],
-        0
-      );
-
-      return totals;
-    },
-    {
-      qr_scan: 0,
-      stamp_awarded: 0,
-      reward_unlocked: 0,
-      reward_redeemed: 0,
-    } as Record<EventType, number>
-  );
-
-  function formatDate(date: string) {
-    return new Date(date).toLocaleString("en-GB", {
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  }
-
-  function periodDescription() {
-    if (period === "daily") {
-      return "Daily activity over the last 30 days";
-    }
-
-    if (period === "weekly") {
-      return "Weekly activity over the last 12 weeks";
-    }
-
-    return "Monthly activity over the last 12 months";
-  }
-
-  function activityLabel(eventType: string) {
-    return EVENT_LABELS[eventType] || eventType.replace(/_/g, " ").toUpperCase();
-  }
-
-  function activityStyle(eventType: string) {
-    if (eventType === "reward_unlocked") {
-      return styles.reward;
-    }
-
-    if (eventType === "reward_redeemed") {
-      return styles.redeemed;
-    }
-
-    if (eventType === "qr_scan") {
-      return styles.scanned;
-    }
-
-    return styles.active;
-  }
-
   return (
     <main style={styles.page}>
       <div style={styles.container}>
         <header style={styles.header}>
           <div>
-            <div style={styles.logo}>
-              PLANET HEALTH
-              <span style={{ color: "#B4FF00" }}>.</span>
-            </div>
+            <p style={styles.eyebrow}>PLANET HEALTH</p>
 
-            <div style={styles.subtitle}>
-              BUSINESS OWNER DASHBOARD
-            </div>
+            <h1 style={styles.heading}>
+              BUSINESS CONTROL PANEL.
+            </h1>
+
+            <p style={styles.subheading}>
+              Loyalty programme performance and customer engagement.
+            </p>
           </div>
 
-          <button style={styles.logout} onClick={logout}>
-            LOG OUT
-          </button>
+          <div style={styles.headerActions}>
+            <button
+              style={styles.logout}
+              onClick={logout}
+            >
+              LOG OUT
+            </button>
+          </div>
         </header>
-
-        <section style={styles.intro}>
-          <p style={{ ...styles.eyebrow, color: "#111111" }}>
-            THE BIG PICTURE
-          </p>
-
-          <h1 style={styles.heading}>
-            YOUR BUSINESS.
-            <br />
-            <span style={{ color: "#45e017" }}>
-              YOUR LOYALTY.
-            </span>
-          </h1>
-
-          <p style={styles.description}>
-            Your live overview of the Planet Health loyalty programme.
-          </p>
-        </section>
 
         {loading ? (
           <div style={styles.message}>
@@ -286,9 +232,14 @@ export default function OwnersDashboard() {
           </div>
         ) : error ? (
           <div style={styles.error}>
-            {error}
+            <strong>UNABLE TO LOAD DASHBOARD</strong>
 
-            <button style={styles.retry} onClick={loadDashboard}>
+            <p>{error}</p>
+
+            <button
+              style={styles.retry}
+              onClick={loadDashboard}
+            >
               TRY AGAIN
             </button>
           </div>
@@ -347,74 +298,29 @@ export default function OwnersDashboard() {
 
               {/* PERIOD SELECTOR */}
               <div style={styles.periodSelector}>
-                <button
-                  onClick={() => setPeriod("daily")}
-                  style={{
-                    ...styles.periodButton,
-                    ...(period === "daily"
-                      ? styles.periodButtonActive
-                      : {}),
-                  }}
-                >
-                  DAILY
-                </button>
-
-                <button
-                  onClick={() => setPeriod("weekly")}
-                  style={{
-                    ...styles.periodButton,
-                    ...(period === "weekly"
-                      ? styles.periodButtonActive
-                      : {}),
-                  }}
-                >
-                  WEEKLY
-                </button>
-
-                <button
-                  onClick={() => setPeriod("monthly")}
-                  style={{
-                    ...styles.periodButton,
-                    ...(period === "monthly"
-                      ? styles.periodButtonActive
-                      : {}),
-                  }}
-                >
-                  MONTHLY
-                </button>
-              </div>
-
-              <p style={styles.periodDescription}>
-                {periodDescription()}
-              </p>
-
-              {/* PERIOD TOTALS */}
-              <div style={styles.engagementStats}>
-                {METRICS.map((metric) => (
-                  <div
-                    key={metric.key}
-                    style={styles.engagementCard}
-                  >
-                    <div style={styles.engagementLabel}>
-                      {metric.label}
-                    </div>
-
-                    <div style={styles.engagementValue}>
-                      {periodTotals[metric.key].toLocaleString("en-GB")}
-                    </div>
-
-                    <div style={styles.engagementDescription}>
-                      {metric.description}
-                    </div>
-                  </div>
-                ))}
+                {(["daily", "weekly", "monthly"] as Period[]).map(
+                  (item) => (
+                    <button
+                      key={item}
+                      onClick={() => setPeriod(item)}
+                      style={{
+                        ...styles.periodButton,
+                        ...(period === item
+                          ? styles.periodButtonActive
+                          : {}),
+                      }}
+                    >
+                      {item.toUpperCase()}
+                    </button>
+                  )
+                )}
               </div>
 
               {/* ACTIVITY CHARTS */}
-              <div style={styles.charts}>
+              <div style={styles.chartGrid}>
                 {METRICS.map((metric) => (
                   <ActivityChart
-                    key={`${period}-${metric.key}`}
+                    key={metric.key}
                     title={metric.label}
                     description={metric.description}
                     data={selectedActivity}
@@ -422,12 +328,6 @@ export default function OwnersDashboard() {
                   />
                 ))}
               </div>
-
-              {selectedActivity.length === 0 && (
-                <p style={styles.noChartData}>
-                  No activity reporting data is available yet.
-                </p>
-              )}
             </section>
 
             {/* CUSTOMER OVERVIEW */}
@@ -454,7 +354,7 @@ export default function OwnersDashboard() {
                   </thead>
 
                   <tbody>
-                    {data.customers.map((customer) => (
+                    {loyaltyCustomers.map((customer) => (
                       <tr key={customer.id}>
                         <td style={styles.td}>
                           {customer.name}
@@ -470,11 +370,12 @@ export default function OwnersDashboard() {
 
                         <td style={styles.td}>
                           <span
-                            style={
-                              customer.stamps >= 6
-                                ? styles.reward
-                                : styles.active
-                            }
+                            style={{
+                              ...styles.status,
+                              ...(customer.stamps >= 6
+                                ? styles.statusReward
+                                : styles.statusActive),
+                            }}
                           >
                             {customer.stamps >= 6
                               ? "REWARD UNLOCKED"
@@ -484,7 +385,7 @@ export default function OwnersDashboard() {
                       </tr>
                     ))}
 
-                    {data.customers.length === 0 && (
+                    {loyaltyCustomers.length === 0 && (
                       <tr>
                         <td style={styles.empty} colSpan={4}>
                           No loyalty customers found yet.
@@ -500,11 +401,11 @@ export default function OwnersDashboard() {
             <section style={styles.section}>
               <div style={styles.sectionHeader}>
                 <h2 style={styles.sectionTitle}>
-                  RECENT LOYALTY ACTIVITY
+                  RECENT ACTIVITY
                 </h2>
 
                 <span style={styles.count}>
-                  LATEST EVENTS
+                  LATEST 100 EVENTS
                 </span>
               </div>
 
@@ -516,37 +417,47 @@ export default function OwnersDashboard() {
                   >
                     <div>
                       <strong style={styles.activityName}>
-                        {item.customer_name || item.customer_id}
+                        {item.customer_name || "Customer"}
                       </strong>
 
-                      <div style={styles.activityEmail}>
-                        {item.customer_email || ""}
-                      </div>
-
-                      <div style={styles.activityDate}>
-                        {formatDate(item.created_at)}
-                      </div>
+                      <p style={styles.activityDescription}>
+                        {EVENT_LABELS[item.event_type] ||
+                          item.event_type.toUpperCase()}
+                      </p>
                     </div>
 
-                    <span style={activityStyle(item.event_type)}>
-                      {activityLabel(item.event_type)}
-                    </span>
+                    <div style={styles.activityDate}>
+                      {new Date(item.created_at).toLocaleString(
+                        "en-GB",
+                        {
+                          day: "2-digit",
+                          month: "short",
+                          year: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        }
+                      )}
+                    </div>
                   </div>
                 ))}
 
                 {data.activity.length === 0 && (
                   <div style={styles.empty}>
-                    No activity recorded yet.
+                    No recent activity recorded yet.
                   </div>
                 )}
               </div>
             </section>
-
-            <button style={styles.refresh} onClick={loadDashboard}>
-              REFRESH DASHBOARD ↻
-            </button>
           </>
         )}
+
+        <button
+          style={styles.refresh}
+          onClick={loadDashboard}
+          disabled={loading}
+        >
+          {loading ? "REFRESHING..." : "REFRESH DASHBOARD"}
+        </button>
 
         <footer style={styles.footer}>
           PLANET HEALTH · BUSINESS CONTROL PANEL
@@ -587,480 +498,343 @@ function ActivityChart({
   data: ActivityBucket[];
   dataKey: EventType;
 }) {
-  const values = data.map((item) => item[dataKey]);
-  const maxValue = Math.max(1, ...values);
-
-  const chartWidth = 760;
-  const chartHeight = 230;
-  const left = 45;
-  const right = 12;
-  const top = 18;
-  const bottom = 42;
-
-  const plotWidth = chartWidth - left - right;
-  const plotHeight = chartHeight - top - bottom;
-
-  const slotWidth = data.length > 0
-    ? plotWidth / data.length
-    : plotWidth;
-
-  const barWidth = Math.max(
-    3,
-    Math.min(24, slotWidth * 0.62)
+  const maximum = Math.max(
+    1,
+    ...data.map((item) => item[dataKey])
   );
-
-  const labelInterval =
-    data.length > 20 ? 5 : data.length > 12 ? 2 : 1;
-
-  const midValue = Math.ceil(maxValue / 2);
 
   return (
     <div style={styles.chartCard}>
-      <div style={styles.chartHeading}>
-        <div>
-          <h3 style={styles.chartTitle}>{title}</h3>
-          <p style={styles.chartDescription}>{description}</p>
-        </div>
+      <h3 style={styles.chartTitle}>{title}</h3>
 
-        <div style={styles.chartTotal}>
-          {values.reduce((sum, value) => sum + value, 0)}
-        </div>
-      </div>
+      <p style={styles.chartDescription}>
+        {description}
+      </p>
 
-      <div style={styles.chartScroller}>
-        <svg
-          viewBox={`0 0 ${chartWidth} ${chartHeight}`}
-          width="100%"
-          role="img"
-          aria-label={`${title} activity bar chart`}
-          style={styles.chartSvg}
-        >
-          {[0, midValue, maxValue].map((value, index) => {
-            const y = top + plotHeight -
-              (value / maxValue) * plotHeight;
+      <div style={styles.chart}>
+        {data.map((item, index) => {
+          const value = item[dataKey];
+          const height = Math.max(
+            value > 0 ? 4 : 0,
+            (value / maximum) * 120
+          );
 
-            return (
-              <g key={index}>
-                <line
-                  x1={left}
-                  y1={y}
-                  x2={chartWidth - right}
-                  y2={y}
-                  stroke="#e5e5e5"
-                  strokeWidth="1"
+          return (
+            <div
+              key={`${item.label}-${index}`}
+              style={styles.barColumn}
+              title={`${item.label}: ${value}`}
+            >
+              <span style={styles.barValue}>
+                {value > 0 ? value : ""}
+              </span>
+
+              <div style={styles.barTrack}>
+                <div
+                  style={{
+                    ...styles.bar,
+                    height: `${height}px`,
+                  }}
                 />
+              </div>
 
-                <text
-                  x={left - 9}
-                  y={y + 4}
-                  fontSize="11"
-                  textAnchor="end"
-                  fill="#777"
-                >
-                  {value}
-                </text>
-              </g>
-            );
-          })}
-
-          {data.map((item, index) => {
-            const value = item[dataKey];
-
-            const barHeight =
-              (value / maxValue) * plotHeight;
-
-            const x =
-              left +
-              index * slotWidth +
-              (slotWidth - barWidth) / 2;
-
-            const y =
-              top + plotHeight - barHeight;
-
-            const showLabel =
-              index % labelInterval === 0 ||
-              index === data.length - 1;
-
-            return (
-              <g key={`${item.label}-${index}`}>
-                <rect
-                  x={x}
-                  y={value > 0 ? y : top + plotHeight - 2}
-                  width={barWidth}
-                  height={value > 0 ? barHeight : 2}
-                  rx="3"
-                  fill="#B4FF00"
-                >
-                  <title>
-                    {item.label}: {value}
-                  </title>
-                </rect>
-
-                {showLabel && (
-                  <text
-                    x={left + index * slotWidth + slotWidth / 2}
-                    y={chartHeight - 13}
-                    fontSize="10"
-                    textAnchor="middle"
-                    fill="#777"
-                  >
-                    {item.label}
-                  </text>
-                )}
-              </g>
-            );
-          })}
-        </svg>
+              <span style={styles.barLabel}>
+                {item.label}
+              </span>
+            </div>
+          );
+        })}
       </div>
-
-      {values.every((value) => value === 0) && (
-        <p style={styles.chartEmpty}>
-          No recorded activity in this period yet.
-        </p>
-      )}
     </div>
   );
 }
 
+// DASHBOARD STYLES
 const styles: Record<string, React.CSSProperties> = {
   page: {
     minHeight: "100vh",
-    background: "#eeeae6",
-    color: "#111",
-    padding: "35px 20px",
-    fontFamily: "Arial, sans-serif",
+    background: "#080808",
+    color: "#fff",
+    padding: "30px 20px",
+    fontFamily: "Arial, Helvetica, sans-serif",
   },
   container: {
-    maxWidth: "1100px",
+    maxWidth: "1400px",
     margin: "0 auto",
   },
   header: {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
+    flexWrap: "wrap",
+    gap: "20px",
+    marginBottom: "35px",
     paddingBottom: "25px",
-    borderBottom: "2px solid #111",
-  },
-  logo: {
-    fontSize: "23px",
-    fontWeight: 950,
-    letterSpacing: "-1px",
-  },
-  subtitle: {
-    fontSize: "10px",
-    letterSpacing: "2px",
-    marginTop: "6px",
-    fontWeight: 800,
-  },
-  logout: {
-    background: "#111",
-    color: "#B4FF00",
-    border: "2px solid #111",
-    borderRadius: "7px",
-    padding: "12px 18px",
-    fontWeight: 900,
-    cursor: "pointer",
-  },
-  intro: {
-    padding: "55px 0 35px",
+    borderBottom: "1px solid #292929",
   },
   eyebrow: {
-    color: "#398900",
+    color: "#B4FF00",
+    fontSize: "11px",
     fontWeight: 900,
-    fontSize: "12px",
     letterSpacing: "3px",
+    margin: "0 0 10px",
   },
   heading: {
-    fontSize: "clamp(38px, 7vw, 70px)",
-    lineHeight: 0.98,
-    letterSpacing: "-3px",
-    margin: "15px 0",
+    fontSize: "clamp(25px, 5vw, 42px)",
     fontWeight: 950,
+    letterSpacing: "-1.5px",
+    margin: 0,
   },
-  description: {
-    color: "#555",
-    fontSize: "15px",
+  subheading: {
+    color: "#999",
+    fontSize: "13px",
+    marginTop: "10px",
+  },
+  headerActions: {
+    display: "flex",
+    gap: "10px",
+  },
+  logout: {
+    padding: "12px 18px",
+    background: "transparent",
+    color: "#fff",
+    border: "1px solid #555",
+    borderRadius: "6px",
+    cursor: "pointer",
+    fontWeight: 900,
   },
   stats: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))",
+    gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
     gap: "14px",
-    marginBottom: "45px",
+    marginBottom: "35px",
   },
   statCard: {
-    background: "#111",
-    color: "#fff",
-    borderRadius: "12px",
-    padding: "25px 20px",
-    borderBottom: "5px solid #B4FF00",
+    background: "#151515",
+    border: "1px solid #292929",
+    borderRadius: "10px",
+    padding: "22px",
   },
   statLabel: {
-    fontSize: "11px",
-    color: "#B4FF00",
+    fontSize: "10px",
     fontWeight: 900,
-    letterSpacing: "1px",
+    letterSpacing: "1.5px",
+    color: "#999",
   },
   statValue: {
-    fontSize: "38px",
+    fontSize: "34px",
     fontWeight: 950,
-    marginTop: "15px",
+    color: "#B4FF00",
+    marginTop: "12px",
   },
   reportingSection: {
-    background: "#fff",
-    border: "2px solid #111",
-    borderRadius: "14px",
+    background: "#111",
+    border: "1px solid #292929",
+    borderRadius: "12px",
     padding: "25px",
-    marginBottom: "45px",
+    marginBottom: "30px",
   },
   reportingHeader: {
-    marginBottom: "25px",
+    display: "flex",
+    justifyContent: "space-between",
+    flexWrap: "wrap",
+    gap: "15px",
   },
   reportingEyebrow: {
-    color: "#398900",
-    fontSize: "11px",
-    fontWeight: 950,
+    color: "#B4FF00",
+    fontSize: "10px",
+    fontWeight: 900,
     letterSpacing: "2px",
-    margin: "0 0 10px",
   },
   reportingTitle: {
-    fontSize: "clamp(24px, 4vw, 34px)",
+    fontSize: "25px",
     fontWeight: 950,
-    letterSpacing: "-1px",
-    margin: "0 0 10px",
+    margin: "10px 0",
   },
   reportingDescription: {
+    color: "#999",
     fontSize: "13px",
-    color: "#666",
-    lineHeight: 1.6,
-    margin: 0,
   },
   periodSelector: {
     display: "flex",
     gap: "8px",
     flexWrap: "wrap",
-    marginBottom: "12px",
+    margin: "25px 0",
   },
   periodButton: {
-    flex: "1 1 100px",
-    padding: "13px 16px",
-    border: "2px solid #111",
-    borderRadius: "7px",
-    background: "#fff",
-    color: "#111",
-    fontSize: "11px",
-    fontWeight: 950,
-    letterSpacing: "1px",
+    background: "#222",
+    color: "#aaa",
+    border: "1px solid #444",
+    borderRadius: "5px",
+    padding: "10px 18px",
     cursor: "pointer",
+    fontSize: "11px",
+    fontWeight: 900,
   },
   periodButtonActive: {
     background: "#B4FF00",
+    color: "#111",
+    borderColor: "#B4FF00",
   },
-  periodDescription: {
-    fontSize: "12px",
-    color: "#777",
-    margin: "12px 0 20px",
-  },
-  engagementStats: {
+  chartGrid: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-    gap: "10px",
-    marginBottom: "28px",
+    gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+    gap: "15px",
   },
-  engagementCard: {
-    background: "#111",
-    color: "#fff",
+  chartCard: {
+    background: "#181818",
+    border: "1px solid #303030",
     borderRadius: "9px",
     padding: "18px",
     minWidth: 0,
   },
-  engagementLabel: {
-    color: "#B4FF00",
-    fontSize: "10px",
+  chartTitle: {
+    fontSize: "12px",
     fontWeight: 950,
     letterSpacing: "1px",
-  },
-  engagementValue: {
-    fontSize: "32px",
-    fontWeight: 950,
-    margin: "12px 0 7px",
-  },
-  engagementDescription: {
-    fontSize: "11px",
-    color: "#ccc",
-    lineHeight: 1.5,
-  },
-  charts: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 430px), 1fr))",
-    gap: "15px",
-  },
-  chartCard: {
-    border: "1px solid #ddd",
-    borderRadius: "10px",
-    padding: "16px",
-    minWidth: 0,
-    background: "#fff",
-  },
-  chartHeading: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: "12px",
-    marginBottom: "12px",
-  },
-  chartTitle: {
-    fontSize: "13px",
-    fontWeight: 950,
-    margin: 0,
+    margin: "0 0 7px",
   },
   chartDescription: {
     fontSize: "11px",
-    color: "#777",
-    margin: "5px 0 0",
-  },
-  chartTotal: {
-    background: "#B4FF00",
-    color: "#111",
-    borderRadius: "7px",
-    padding: "9px 12px",
-    fontSize: "16px",
-    fontWeight: 950,
-  },
-  chartScroller: {
-    width: "100%",
-    overflowX: "auto",
-  },
-  chartSvg: {
-    display: "block",
-    width: "100%",
-    minWidth: "300px",
-    height: "auto",
-  },
-  chartEmpty: {
-    textAlign: "center",
     color: "#888",
-    fontSize: "11px",
-    margin: "8px 0 0",
+    margin: "0 0 20px",
   },
-  noChartData: {
-    textAlign: "center",
+  chart: {
+    display: "flex",
+    alignItems: "flex-end",
+    gap: "5px",
+    height: "180px",
+    overflowX: "auto",
+    paddingTop: "15px",
+  },
+  barColumn: {
+    flex: "1 0 18px",
+    minWidth: "18px",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    height: "100%",
+  },
+  barValue: {
+    fontSize: "9px",
+    color: "#B4FF00",
+    marginBottom: "4px",
+  },
+  barTrack: {
+    height: "120px",
+    width: "100%",
+    display: "flex",
+    alignItems: "flex-end",
+    justifyContent: "center",
+  },
+  bar: {
+    width: "70%",
+    maxWidth: "20px",
+    background: "#B4FF00",
+    borderRadius: "3px 3px 0 0",
+    minHeight: "0",
+  },
+  barLabel: {
+    fontSize: "8px",
     color: "#777",
-    fontSize: "12px",
-    padding: "20px",
+    marginTop: "7px",
+    whiteSpace: "nowrap",
   },
   section: {
-    marginBottom: "40px",
+    background: "#111",
+    border: "1px solid #292929",
+    borderRadius: "12px",
+    padding: "25px",
+    marginBottom: "30px",
   },
   sectionHeader: {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
-    gap: "12px",
-    marginBottom: "15px",
+    gap: "15px",
     flexWrap: "wrap",
+    marginBottom: "20px",
   },
   sectionTitle: {
     fontSize: "17px",
     fontWeight: 950,
+    letterSpacing: "1px",
+    margin: 0,
   },
   count: {
     fontSize: "10px",
+    color: "#B4FF00",
     fontWeight: 900,
     letterSpacing: "1px",
-    color: "#555",
   },
   tableWrap: {
+    width: "100%",
     overflowX: "auto",
-    background: "#fff",
-    border: "2px solid #111",
-    borderRadius: "10px",
   },
   table: {
     width: "100%",
     borderCollapse: "collapse",
-    minWidth: "650px",
     textAlign: "left",
   },
   th: {
-    padding: "16px 14px",
-    background: "#111",
-    color: "#B4FF00",
+    padding: "13px 12px",
     fontSize: "10px",
+    color: "#888",
+    borderBottom: "1px solid #333",
     letterSpacing: "1px",
+    whiteSpace: "nowrap",
   },
   td: {
-    padding: "17px 14px",
-    borderBottom: "1px solid #ddd",
-    fontSize: "13px",
-    fontWeight: 600,
+    padding: "15px 12px",
+    fontSize: "12px",
+    color: "#ddd",
+    borderBottom: "1px solid #242424",
   },
-  active: {
+  status: {
     display: "inline-block",
-    background: "#e5ffd0",
-    color: "#277400",
-    padding: "7px 9px",
-    borderRadius: "5px",
+    padding: "6px 9px",
+    borderRadius: "4px",
     fontSize: "9px",
-    fontWeight: 950,
+    fontWeight: 900,
+    letterSpacing: "0.5px",
     whiteSpace: "nowrap",
   },
-  reward: {
-    display: "inline-block",
+  statusActive: {
+    background: "#202820",
+    color: "#B4FF00",
+  },
+  statusReward: {
     background: "#B4FF00",
     color: "#111",
-    padding: "7px 9px",
-    borderRadius: "5px",
-    fontSize: "9px",
-    fontWeight: 950,
-    whiteSpace: "nowrap",
-  },
-  redeemed: {
-    display: "inline-block",
-    background: "#111",
-    color: "#B4FF00",
-    padding: "7px 9px",
-    borderRadius: "5px",
-    fontSize: "9px",
-    fontWeight: 950,
-    whiteSpace: "nowrap",
-  },
-  scanned: {
-    display: "inline-block",
-    background: "#e4f0ff",
-    color: "#164c86",
-    padding: "7px 9px",
-    borderRadius: "5px",
-    fontSize: "9px",
-    fontWeight: 950,
-    whiteSpace: "nowrap",
   },
   activityList: {
-    background: "#fff",
-    border: "2px solid #111",
-    borderRadius: "10px",
-    overflow: "hidden",
+    display: "flex",
+    flexDirection: "column",
   },
   activityItem: {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
     gap: "15px",
-    padding: "18px",
-    borderBottom: "1px solid #ddd",
     flexWrap: "wrap",
+    padding: "16px 5px",
+    borderBottom: "1px solid #292929",
   },
   activityName: {
-    fontSize: "14px",
+    fontSize: "13px",
+    color: "#fff",
   },
-  activityEmail: {
-    fontSize: "12px",
-    color: "#666",
-    marginTop: "4px",
+  activityDescription: {
+    fontSize: "10px",
+    color: "#B4FF00",
+    fontWeight: 900,
+    letterSpacing: "1px",
+    margin: "6px 0 0",
   },
   activityDate: {
-    fontSize: "11px",
+    fontSize: "10px",
     color: "#888",
-    marginTop: "5px",
   },
   empty: {
     padding: "25px",
