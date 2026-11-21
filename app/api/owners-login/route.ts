@@ -1,7 +1,23 @@
 
 import { NextRequest, NextResponse } from "next/server";
+import { createHmac, randomBytes } from "crypto";
 
 export const runtime = "nodejs";
+
+const SESSION_DURATION = 60 * 60 * 8;
+
+function createOwnerToken(secret: string): string {
+  const expires = Math.floor(Date.now() / 1000) + SESSION_DURATION;
+  const nonce = randomBytes(32).toString("hex");
+
+  const payload = `owners:v1:${expires}:${nonce}`;
+
+  const signature = createHmac("sha256", secret)
+    .update(payload)
+    .digest("hex");
+
+  return `v1.${expires}.${nonce}.${signature}`;
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -24,14 +40,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const token = createOwnerToken(sessionSecret);
+
     const response = NextResponse.json({ success: true });
 
-    response.cookies.set("owners_session", sessionSecret, {
+    response.cookies.set("owners_session", token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "strict",
       path: "/",
-      maxAge: 60 * 60 * 8,
+      maxAge: SESSION_DURATION,
     });
 
     return response;
