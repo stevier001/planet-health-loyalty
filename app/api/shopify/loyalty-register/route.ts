@@ -135,6 +135,7 @@ export async function POST(request: NextRequest) {
     const tokenData = await tokenResponse.json();
 
     if (!tokenResponse.ok || !tokenData.access_token) {
+      console.error("Shopify token request failed:", tokenData);
       throw new Error("Shopify authentication failed");
     }
 
