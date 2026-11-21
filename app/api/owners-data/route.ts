@@ -8,7 +8,10 @@ type ShopifyCustomer = {
   firstName: string | null;
   lastName: string | null;
   email: string | null;
-  metafield: {
+    metafield: {
+    value: string;
+  } | null;
+  loyaltyMemberMetafield: {
     value: string;
   } | null;
 };
