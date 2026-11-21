@@ -31,9 +31,9 @@ function verifyShopifyProxy(request: NextRequest): boolean {
   });
 
   const message = Array.from(grouped.entries())
-    .sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
-    .map(([key, values]) => `${key}=${values.join(",")}`)
-    .join("");
+  .map(([key, values]) => `${key}=${values.join(",")}`)
+  .sort()
+  .join("");
 
   const calculated = crypto
     .createHmac("sha256", secret)
