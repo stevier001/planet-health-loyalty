@@ -6,6 +6,7 @@ export const dynamic = "force-dynamic";
 
 type ShopifyCustomer = {
   id: string;
+  displayName: string | null;
   firstName: string | null;
   lastName: string | null;
   email: string | null;
@@ -343,8 +344,8 @@ export async function GET(request: NextRequest) {
       "X-Shopify-Access-Token": tokenData.access_token,
     };
 
-    // Get every Shopify customer, their stamp balance
-    // and their loyalty membership status.
+    // Get every Shopify customer, including their display name,
+    // stamp balance and loyalty membership status.
     const customers: ShopifyCustomer[] = [];
     let cursor: string | null = null;
     let hasNextPage = true;
@@ -361,6 +362,7 @@ export async function GET(request: NextRequest) {
                   cursor
                   node {
                     id
+                    displayName
                     firstName
                     lastName
                     email
@@ -392,7 +394,10 @@ export async function GET(request: NextRequest) {
       const customerData = await customerResponse.json();
 
       if (!customerResponse.ok || customerData.errors) {
-        console.error("Shopify customer query failed:", customerData.errors);
+        console.error(
+          "Shopify customer query failed:",
+          customerData.errors
+        );
         throw new Error("Unable to retrieve Shopify customers");
       }
 
@@ -418,16 +423,22 @@ export async function GET(request: NextRequest) {
 
     // Prepare customer data for the dashboard.
     const dashboardCustomers = customers.map((customer) => {
-      const name = [
+      const firstAndLastName = [
         customer.firstName,
         customer.lastName,
       ]
         .filter(Boolean)
-        .join(" ");
+        .join(" ")
+        .trim();
+
+      const name =
+        customer.displayName?.trim() ||
+        firstAndLastName ||
+        "Unnamed customer";
 
       return {
         id: customer.id,
-        name: name || "Unnamed customer",
+        name,
         email: customer.email || "",
         stamps: Math.max(
           0,
