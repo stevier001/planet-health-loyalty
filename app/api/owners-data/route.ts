@@ -3,12 +3,13 @@ import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
 type ShopifyCustomer = {
   id: string;
   firstName: string | null;
   lastName: string | null;
   email: string | null;
-    metafield: {
+  metafield: {
     value: string;
   } | null;
   loyaltyMemberMetafield: {
@@ -342,7 +343,8 @@ export async function GET(request: NextRequest) {
       "X-Shopify-Access-Token": tokenData.access_token,
     };
 
-    // Get every Shopify customer and their current stamp balance.
+    // Get every Shopify customer, their stamp balance
+    // and their loyalty membership status.
     const customers: ShopifyCustomer[] = [];
     let cursor: string | null = null;
     let hasNextPage = true;
@@ -368,6 +370,12 @@ export async function GET(request: NextRequest) {
                     ) {
                       value
                     }
+                    loyaltyMemberMetafield: metafield(
+                      namespace: "custom"
+                      key: "loyalty_member"
+                    ) {
+                      value
+                    }
                   }
                 }
                 pageInfo {
@@ -384,6 +392,7 @@ export async function GET(request: NextRequest) {
       const customerData = await customerResponse.json();
 
       if (!customerResponse.ok || customerData.errors) {
+        console.error("Shopify customer query failed:", customerData.errors);
         throw new Error("Unable to retrieve Shopify customers");
       }
 
@@ -424,8 +433,15 @@ export async function GET(request: NextRequest) {
           0,
           Number(customer.metafield?.value || 0) || 0
         ),
+        loyaltyMember:
+          customer.loyaltyMemberMetafield?.value === "true",
       };
     });
+
+    // Count actual registered loyalty members only.
+    const totalLoyaltyMembers = dashboardCustomers.filter(
+      (customer) => customer.loyaltyMember
+    ).length;
 
     const baseUrl = supabaseUrl.replace(/\/$/, "");
 
@@ -554,6 +570,7 @@ export async function GET(request: NextRequest) {
       success: true,
       customers: dashboardCustomers,
       activity: dashboardActivity,
+      totalLoyaltyMembers,
       totalStampsAwarded,
       totalQrScans,
       activitySummary,
