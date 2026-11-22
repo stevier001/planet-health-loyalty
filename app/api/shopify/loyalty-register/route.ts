@@ -60,11 +60,132 @@ function verifyShopifyProxy(request: NextRequest): boolean {
   return false;
 }
 
+function getVerifiedCustomer(request: NextRequest): string | null {
+  const params = new URL(request.url).searchParams;
+
+  if (!verifyShopifyProxy(request)) {
+    return null;
+  }
+
+  const timestamp = Number(params.get("timestamp"));
+
+  if (
+    !Number.isFinite(timestamp) ||
+    Math.abs(Date.now() / 1000 - timestamp) > 300
+  ) {
+    return null;
+  }
+
+  const shop = params.get("shop");
+  const configuredShop = process.env.SHOPIFY_SHOP;
+
+  if (
+    !shop ||
+    !configuredShop ||
+    shop.toLowerCase() !== configuredShop.toLowerCase()
+  ) {
+    return null;
+  }
+
+  const customerId = params.get("logged_in_customer_id");
+
+  if (!customerId || !/^\d+$/.test(customerId)) {
+    return null;
+  }
+
+  return `gid://shopify/Customer/${customerId}`;
+}
+
+// CUSTOMER WALLET: READ ONLY
+export async function GET(request: NextRequest) {
+  try {
+    const customerGid = getVerifiedCustomer(request);
+
+    if (!customerGid) {
+      return NextResponse.json(
+        { success: false, error: "Customer authentication failed" },
+        { status: 401 }
+      );
+    }
+
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!supabaseUrl || !serviceKey) {
+      throw new Error("Supabase settings are missing");
+    }
+
+    const baseUrl = supabaseUrl.replace(/\/$/, "");
+
+    const headers = {
+      apikey: serviceKey,
+      Authorization: `Bearer ${serviceKey}`,
+    };
+
+    const accountResponse = await fetch(
+      `${baseUrl}/rest/v1/wallet_accounts?customer_id=eq.${encodeURIComponent(customerGid)}&select=balance_pence,currency`,
+      {
+        headers,
+        cache: "no-store",
+      }
+    );
+
+    if (!accountResponse.ok) {
+      throw new Error("Could not retrieve customer wallet");
+    }
+
+    const accounts = await accountResponse.json();
+
+    const account = accounts[0] || {
+      balance_pence: 0,
+      currency: "GBP",
+    };
+
+    const transactionsResponse = await fetch(
+      `${baseUrl}/rest/v1/wallet_transactions?customer_id=eq.${encodeURIComponent(customerGid)}&select=id,transaction_type,amount_pence,balance_after_pence,description,reference,created_at&order=created_at.desc&limit=50`,
+      {
+        headers,
+        cache: "no-store",
+      }
+    );
+
+    if (!transactionsResponse.ok) {
+      throw new Error("Could not retrieve wallet transactions");
+    }
+
+    const transactions = await transactionsResponse.json();
+
+    return NextResponse.json(
+      {
+        success: true,
+        balancePence: Number(account.balance_pence),
+        currency: account.currency || "GBP",
+        transactions,
+      },
+      {
+        headers: {
+          "Cache-Control": "no-store, private",
+        },
+      }
+    );
+  } catch (error) {
+    console.error("Customer wallet balance error:", error);
+
+    return NextResponse.json(
+      {
+        success: false,
+        error: "Unable to retrieve wallet information.",
+      },
+      { status: 500 }
+    );
+  }
+}
+
+// EXISTING LOYALTY REGISTRATION: PRESERVED
 export async function POST(request: NextRequest) {
   try {
     const params = new URL(request.url).searchParams;
 
-    // Verify Shopify App Proxy signature
     if (!verifyShopifyProxy(request)) {
       return NextResponse.json(
         { success: false, error: "Invalid Shopify signature" },
@@ -72,7 +193,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate timestamp
     const timestamp = Number(params.get("timestamp"));
 
     if (
@@ -85,7 +205,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate Shopify store
     const shop = params.get("shop");
     const configuredShop = process.env.SHOPIFY_SHOP;
 
@@ -100,7 +219,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Only register logged-in customers
     const customerId = params.get("logged_in_customer_id");
 
     if (!customerId || !/^\d+$/.test(customerId)) {
@@ -122,7 +240,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get Shopify Admin API access token
     const tokenResponse = await fetch(
       `https://${configuredShop}/admin/oauth/access_token`,
       {
@@ -149,7 +266,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Register customer as a loyalty member
     const customerGid = `gid://shopify/Customer/${customerId}`;
 
     const mutation = `
