@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type Customer = {
   id: string;
@@ -10,6 +10,18 @@ type Customer = {
   email: string;
   stamps: number;
 };
+
+type WalletTransaction = {
+  id: string;
+  transaction_type: "credit" | "debit";
+  amount_pence: number;
+  balance_after_pence: number;
+  description: string | null;
+  reference: string | null;
+  created_at: string;
+};
+
+type WalletMode = "credit" | "debit";
 
 export default function StaffPage() {
   const [pin, setPin] = useState("");
@@ -30,6 +42,34 @@ export default function StaffPage() {
   const [scannerOpen, setScannerOpen] = useState(false);
   const [scannerError, setScannerError] = useState("");
 
+  // Wallet state
+  const [balancePence, setBalancePence] = useState<number | null>(null);
+  const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
+  const [walletLoading, setWalletLoading] = useState(false);
+  const [walletError, setWalletError] = useState("");
+  const [walletMessage, setWalletMessage] = useState("");
+
+  const [walletMode, setWalletMode] = useState<WalletMode | null>(null);
+  const [walletAmount, setWalletAmount] = useState("");
+  const [walletDescription, setWalletDescription] = useState("");
+  const [walletSubmitting, setWalletSubmitting] = useState(false);
+
+  // Prevent an old balance request overwriting a newer customer selection.
+  const walletRequestNumber = useRef(0);
+
+  // Reuse the same key when retrying an identical transaction.
+  const pendingWalletRequest = useRef<{
+    fingerprint: string;
+    key: string;
+  } | null>(null);
+
+  function formatMoney(pence: number) {
+    return (pence / 100).toLocaleString("en-GB", {
+      style: "currency",
+      currency: "GBP",
+    });
+  }
+
   // Check staff login session
   useEffect(() => {
     async function checkSession() {
@@ -47,6 +87,75 @@ export default function StaffPage() {
 
     checkSession();
   }, []);
+
+  // Load the selected customer's wallet
+  async function loadWallet(customerId: string) {
+    const requestNumber = ++walletRequestNumber.current;
+
+    setWalletLoading(true);
+    setWalletError("");
+    setWalletMessage("");
+    setBalancePence(null);
+    setTransactions([]);
+
+    try {
+      const response = await fetch(
+        `/api/wallet/balance?customerId=${encodeURIComponent(customerId)}`,
+        { cache: "no-store" }
+      );
+
+      const data = await response.json();
+
+      if (requestNumber !== walletRequestNumber.current) return;
+
+      if (response.status === 401) {
+        setAuthenticated(false);
+        setWalletError("Your staff session has expired. Please log in again.");
+        return;
+      }
+
+      if (!response.ok || !data.success) {
+        setWalletError(data.message || "Unable to load wallet.");
+        return;
+      }
+
+      setBalancePence(data.balancePence);
+      setTransactions(data.transactions || []);
+    } catch {
+      if (requestNumber === walletRequestNumber.current) {
+        setWalletError("Unable to connect to the wallet. Please try again.");
+      }
+    } finally {
+      if (requestNumber === walletRequestNumber.current) {
+        setWalletLoading(false);
+      }
+    }
+  }
+
+  // Automatically load wallet whenever a customer is selected
+  useEffect(() => {
+    if (!selected || !authenticated) {
+      walletRequestNumber.current++;
+      setBalancePence(null);
+      setTransactions([]);
+      setWalletLoading(false);
+      setWalletError("");
+      setWalletMessage("");
+      setWalletMode(null);
+      setWalletAmount("");
+      setWalletDescription("");
+      return;
+    }
+
+    setWalletMode(null);
+    setWalletAmount("");
+    setWalletDescription("");
+    pendingWalletRequest.current = null;
+
+    loadWallet(selected.id);
+    // The selected customer ID is the intended trigger.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected?.id, authenticated]);
 
   // QR camera scanner
   useEffect(() => {
@@ -102,7 +211,7 @@ export default function StaffPage() {
             // Ignore normal camera scanning misses
           }
         );
-      } catch (err) {
+      } catch {
         if (!cancelled) {
           setScannerError(
             "Unable to access the camera. Please allow camera permission and try again."
@@ -173,6 +282,10 @@ export default function StaffPage() {
       setCustomers([]);
       setSearch("");
       setMessage("");
+      setBalancePence(null);
+      setTransactions([]);
+      setWalletMode(null);
+      pendingWalletRequest.current = null;
     }
   }
 
@@ -356,6 +469,132 @@ export default function StaffPage() {
     }
   }
 
+  // Process a wallet top-up or spend
+  async function processWalletTransaction(
+    e: React.FormEvent<HTMLFormElement>
+  ) {
+    e.preventDefault();
+
+    if (
+      !selected ||
+      walletSubmitting ||
+      !walletMode ||
+      balancePence === null
+    ) {
+      return;
+    }
+
+    const amount = Number(walletAmount);
+    const amountPence = Math.round(amount * 100);
+
+    if (
+      !Number.isFinite(amount) ||
+      amount <= 0 ||
+      amountPence <= 0 ||
+      Math.round(amount * 100) !== amount * 100 ||
+      amount > 10000
+    ) {
+      setWalletError("Enter a valid amount up to £10,000, with up to 2 decimal places.");
+      return;
+    }
+
+    if (walletMode === "debit" && amountPence > balancePence) {
+      setWalletError("Insufficient wallet balance.");
+      return;
+    }
+
+    const description =
+      walletDescription.trim() ||
+      (walletMode === "credit" ? "Wallet top-up" : "Wallet purchase");
+
+    const actionLabel =
+      walletMode === "credit" ? "add to" : "deduct from";
+
+    const confirmed = window.confirm(
+      `Confirm ${formatMoney(amountPence)} ${actionLabel} this customer's wallet?\n\nIMPORTANT: The cash or card payment must already have been completed through the till. This only records the wallet transaction.`
+    );
+
+    if (!confirmed) return;
+
+    setWalletSubmitting(true);
+    setWalletError("");
+    setWalletMessage("");
+
+    const fingerprint = [
+      selected.id,
+      walletMode,
+      amountPence,
+      description,
+    ].join("|");
+
+    if (
+      !pendingWalletRequest.current ||
+      pendingWalletRequest.current.fingerprint !== fingerprint
+    ) {
+      pendingWalletRequest.current = {
+        fingerprint,
+        key: crypto.randomUUID(),
+      };
+    }
+
+    const idempotencyKey = pendingWalletRequest.current.key;
+
+    try {
+      const response = await fetch("/api/wallet/transaction", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          customerId: selected.id,
+          transactionType: walletMode,
+          amount,
+          description,
+          idempotencyKey,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.status === 401) {
+        setAuthenticated(false);
+        setWalletError("Your staff session has expired. Please log in again.");
+        return;
+      }
+
+      if (!response.ok || !data.success) {
+        setWalletError(data.message || "Unable to process wallet transaction.");
+        return;
+      }
+
+      // Only clear the key after the server confirms success.
+      pendingWalletRequest.current = null;
+
+      if (typeof data.balancePence === "number") {
+        setBalancePence(data.balancePence);
+      }
+
+      setWalletAmount("");
+      setWalletDescription("");
+      setWalletMode(null);
+
+      await loadWallet(selected.id);
+
+      setWalletMessage(
+        walletMode === "credit"
+          ? "Money successfully added to the wallet."
+          : "Wallet spending successfully recorded."
+      );
+    } catch {
+      // Keep the same key so an identical retry cannot create a duplicate.
+      setWalletError(
+        "We couldn't confirm the transaction. Check the wallet balance and transaction history before trying again."
+      );
+    } finally {
+      setWalletSubmitting(false);
+    }
+  }
+
   if (checking) {
     return (
       <main style={styles.page}>
@@ -441,7 +680,7 @@ export default function StaffPage() {
           </h1>
 
           <p style={styles.description}>
-            Find a customer, view their loyalty card and add a stamp.
+            Find a customer, view their loyalty card and manage their wallet.
           </p>
         </section>
 
@@ -553,67 +792,275 @@ export default function StaffPage() {
 
         {/* CUSTOMER LOYALTY CARD */}
         {selected && (
-          <section style={styles.loyaltyCard}>
-            <div style={styles.eyebrowGreen}>CUSTOMER LOYALTY CARD</div>
+          <>
+            <section style={styles.loyaltyCard}>
+              <div style={styles.eyebrowGreen}>CUSTOMER LOYALTY CARD</div>
 
-            <h2 style={styles.customerName}>
-              {selected.firstName} {selected.lastName}
-            </h2>
+              <h2 style={styles.customerName}>
+                {selected.firstName} {selected.lastName}
+              </h2>
 
-            <p style={styles.customerEmail}>{selected.email}</p>
+              <p style={styles.customerEmail}>{selected.email}</p>
 
-            <h2 style={styles.sectionTitleWhite}>YOUR REWARDS</h2>
+              <h2 style={styles.sectionTitleWhite}>YOUR REWARDS</h2>
 
-            <div style={styles.stampRow}>
-              {[1, 2, 3, 4, 5, 6].map((number) => (
-                <div
-                  key={number}
+              <div style={styles.stampRow}>
+                {[1, 2, 3, 4, 5, 6].map((number) => (
+                  <div
+                    key={number}
+                    style={{
+                      ...styles.stamp,
+                      background:
+                        number <= selected.stamps ? "#B4FF00" : "transparent",
+                      color:
+                        number <= selected.stamps ? "#111" : "#fff",
+                    }}
+                  >
+                    {number <= selected.stamps ? "✓" : number}
+                  </div>
+                ))}
+              </div>
+
+              <div style={styles.stampCount}>
+                {selected.stamps} / 6 STAMPS
+              </div>
+
+              {selected.stamps >= 6 ? (
+                <div style={styles.reward}>
+                  <strong>REWARD UNLOCKED!</strong>
+                  <p>This customer has collected all 6 stamps.</p>
+
+                  <button
+                    onClick={redeemReward}
+                    disabled={redeemLoading}
+                    style={styles.redeemButton}
+                  >
+                    {redeemLoading
+                      ? "REDEEMING REWARD..."
+                      : "REDEEM REWARD ✓"}
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={addStamp}
+                  disabled={stampLoading}
+                  style={styles.button}
+                >
+                  {stampLoading ? "SAVING STAMP..." : "ADD STAMP +"}
+                </button>
+              )}
+
+              <p style={styles.cardNote}>
+                Stamps are saved directly to the customer's Shopify record.
+              </p>
+            </section>
+
+            {/* CUSTOMER WALLET */}
+            <section style={styles.walletCard}>
+              <div style={styles.walletHeader}>
+                <div>
+                  <div style={styles.walletEyebrow}>CUSTOMER WALLET</div>
+                  <h2 style={styles.walletTitle}>AVAILABLE BALANCE</h2>
+                </div>
+
+                <span style={styles.walletTag}>SEPARATE FROM STAMPS</span>
+              </div>
+
+              {walletLoading ? (
+                <div style={styles.walletLoading}>LOADING WALLET...</div>
+              ) : balancePence !== null ? (
+                <div style={styles.walletBalance}>
+                  {formatMoney(balancePence)}
+                </div>
+              ) : (
+                <div style={styles.walletLoading}>
+                  WALLET BALANCE UNAVAILABLE
+                </div>
+              )}
+
+              {walletError && (
+                <p style={styles.walletError}>{walletError}</p>
+              )}
+
+              {walletMessage && (
+                <p style={styles.walletSuccess}>{walletMessage}</p>
+              )}
+
+              <div style={styles.walletActions}>
+                <button
+                  type="button"
+                  disabled={walletLoading || balancePence === null || walletSubmitting}
+                  onClick={() => {
+                    setWalletMode("credit");
+                    setWalletAmount("");
+                    setWalletDescription("");
+                    setWalletError("");
+                    setWalletMessage("");
+                  }}
                   style={{
-                    ...styles.stamp,
-                    background:
-                      number <= selected.stamps ? "#B4FF00" : "transparent",
-                    color:
-                      number <= selected.stamps ? "#111" : "#fff",
+                    ...styles.walletAction,
+                    ...(walletMode === "credit" ? styles.walletActionActive : {}),
                   }}
                 >
-                  {number <= selected.stamps ? "✓" : number}
-                </div>
-              ))}
-            </div>
-
-            <div style={styles.stampCount}>
-              {selected.stamps} / 6 STAMPS
-            </div>
-
-            {selected.stamps >= 6 ? (
-              <div style={styles.reward}>
-                <strong>REWARD UNLOCKED!</strong>
-                <p>This customer has collected all 6 stamps.</p>
+                  <span style={styles.walletActionIcon}>⊕</span>
+                  <strong>ADD MONEY</strong>
+                  <span>Record a till top-up</span>
+                </button>
 
                 <button
-                  onClick={redeemReward}
-                  disabled={redeemLoading}
-                  style={styles.redeemButton}
+                  type="button"
+                  disabled={walletLoading || balancePence === null || walletSubmitting}
+                  onClick={() => {
+                    setWalletMode("debit");
+                    setWalletAmount("");
+                    setWalletDescription("");
+                    setWalletError("");
+                    setWalletMessage("");
+                  }}
+                  style={{
+                    ...styles.walletAction,
+                    ...(walletMode === "debit" ? styles.walletActionActive : {}),
+                  }}
                 >
-                  {redeemLoading
-                    ? "REDEEMING REWARD..."
-                    : "REDEEM REWARD ✓"}
+                  <span style={styles.walletActionIcon}>▣</span>
+                  <strong>SPEND MONEY</strong>
+                  <span>Deduct a purchase</span>
                 </button>
               </div>
-            ) : (
-              <button
-                onClick={addStamp}
-                disabled={stampLoading}
-                style={styles.button}
-              >
-                {stampLoading ? "SAVING STAMP..." : "ADD STAMP +"}
-              </button>
-            )}
 
-            <p style={styles.cardNote}>
-              Stamps are saved directly to the customer's Shopify record.
-            </p>
-          </section>
+              {walletMode && (
+                <form
+                  onSubmit={processWalletTransaction}
+                  style={styles.walletForm}
+                >
+                  <h3 style={styles.walletFormTitle}>
+                    {walletMode === "credit" ? "ADD MONEY TO WALLET" : "SPEND FROM WALLET"}
+                  </h3>
+
+                  <p style={styles.walletHint}>
+                    {walletMode === "credit"
+                      ? "Record money already received through the till."
+                      : "Record a purchase already paid for through the till."}
+                  </p>
+
+                  <label style={styles.label}>AMOUNT (£)</label>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min="0.01"
+                    max="10000"
+                    step="0.01"
+                    required
+                    value={walletAmount}
+                    onChange={(e) => setWalletAmount(e.target.value)}
+                    placeholder="0.00"
+                    style={styles.input}
+                  />
+
+                  <label style={styles.label}>DESCRIPTION (OPTIONAL)</label>
+                  <input
+                    type="text"
+                    maxLength={200}
+                    value={walletDescription}
+                    onChange={(e) => setWalletDescription(e.target.value)}
+                    placeholder={
+                      walletMode === "credit"
+                        ? "e.g. Wallet top-up"
+                        : "e.g. Lunch purchase"
+                    }
+                    style={styles.input}
+                  />
+
+                  <button
+                    type="submit"
+                    disabled={walletSubmitting || !walletAmount || balancePence === null}
+                    style={styles.button}
+                  >
+                    {walletSubmitting
+                      ? "PROCESSING..."
+                      : walletMode === "credit"
+                        ? "CONFIRM TOP-UP →"
+                        : "CONFIRM WALLET SPEND →"}
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={walletSubmitting}
+                    onClick={() => {
+                      setWalletMode(null);
+                      setWalletAmount("");
+                      setWalletDescription("");
+                      setWalletError("");
+                    }}
+                    style={styles.walletCancel}
+                  >
+                    CANCEL
+                  </button>
+                </form>
+              )}
+
+              <div style={styles.transactionHeader}>
+                <h3 style={styles.transactionTitle}>RECENT TRANSACTIONS</h3>
+
+                <button
+                  type="button"
+                  disabled={walletLoading}
+                  onClick={() => loadWallet(selected.id)}
+                  style={styles.refreshButton}
+                >
+                  REFRESH ↻
+                </button>
+              </div>
+
+              {walletLoading ? (
+                <p style={styles.walletHint}>Loading transactions...</p>
+              ) : transactions.length === 0 ? (
+                <p style={styles.walletHint}>No wallet transactions yet.</p>
+              ) : (
+                <div>
+                  {transactions.map((transaction) => (
+                    <div key={transaction.id} style={styles.transactionRow}>
+                      <div style={styles.transactionDetails}>
+                        <strong>
+                          {transaction.description ||
+                            (transaction.transaction_type === "credit"
+                              ? "Wallet top-up"
+                              : "Wallet purchase")}
+                        </strong>
+                        <span>
+                          {new Date(transaction.created_at).toLocaleString(
+                            "en-GB",
+                            {
+                              dateStyle: "medium",
+                              timeStyle: "short",
+                            }
+                          )}
+                        </span>
+                      </div>
+
+                      <strong
+                        style={{
+                          color:
+                            transaction.transaction_type === "credit"
+                              ? "#087A32"
+                              : "#111",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {transaction.transaction_type === "credit" ? "+" : "−"}
+                        {formatMoney(transaction.amount_pence)}
+                      </strong>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <p style={styles.walletFootnote}>
+                Wallet credit is separate from loyalty stamps. All cash or card
+                payments must be completed through the till first.
+              </p>
+            </section>
+          </>
         )}
 
         <footer style={styles.footer}>
@@ -911,5 +1358,172 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontSize: "10px",
     letterSpacing: "1.5px",
     color: "#888",
+  },
+
+  // Wallet styling
+  walletCard: {
+    background: "#fff",
+    color: "#111",
+    border: "2px solid #111",
+    borderRadius: "18px",
+    padding: "25px",
+    marginBottom: "22px",
+    boxSizing: "border-box",
+    width: "100%",
+  },
+  walletHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: "12px",
+  },
+  walletEyebrow: {
+    fontSize: "12px",
+    fontWeight: 900,
+    letterSpacing: "1px",
+  },
+  walletTitle: {
+    fontSize: "11px",
+    color: "#777",
+    fontWeight: 700,
+    marginTop: "15px",
+    marginBottom: "8px",
+  },
+  walletTag: {
+    background: "#dff5df",
+    color: "#087A32",
+    borderRadius: "20px",
+    padding: "5px 10px",
+    fontSize: "10px",
+    fontWeight: 900,
+  },
+  walletBalance: {
+    fontSize: "32px",
+    fontWeight: 900,
+    color: "#087A32",
+    margin: "5px 0 22px",
+  },
+  walletLoading: {
+    fontSize: "13px",
+    color: "#777",
+    margin: "15px 0 22px",
+  },
+  walletActions: {
+    display: "grid",
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+    gap: "12px",
+    marginTop: "15px",
+    marginBottom: "22px",
+  },
+  walletAction: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "flex-start",
+    gap: "7px",
+    padding: "15px 12px",
+    background: "#fff",
+    color: "#111",
+    border: "1px solid #ddd",
+    borderRadius: "10px",
+    textAlign: "left",
+    cursor: "pointer",
+    minWidth: 0,
+  },
+  walletActionActive: {
+    border: "2px solid #111",
+    background: "#f3ffd6",
+  },
+  walletActionIcon: {
+    fontSize: "24px",
+    lineHeight: 1,
+  },
+  walletForm: {
+    background: "#f7f7f7",
+    border: "1px solid #ddd",
+    borderRadius: "12px",
+    padding: "18px",
+    marginBottom: "24px",
+  },
+  walletFormTitle: {
+    fontSize: "16px",
+    fontWeight: 900,
+    marginTop: 0,
+  },
+  walletHint: {
+    fontSize: "12px",
+    color: "#777",
+    lineHeight: 1.5,
+  },
+  walletCancel: {
+    width: "100%",
+    padding: "14px",
+    background: "#fff",
+    color: "#111",
+    border: "1px solid #111",
+    borderRadius: "10px",
+    fontWeight: 900,
+    cursor: "pointer",
+    marginTop: "10px",
+  },
+  walletError: {
+    background: "#fff0f0",
+    color: "#b00020",
+    padding: "10px",
+    borderRadius: "8px",
+    fontSize: "13px",
+    fontWeight: 700,
+  },
+  walletSuccess: {
+    background: "#eaf8e9",
+    color: "#087A32",
+    padding: "10px",
+    borderRadius: "8px",
+    fontSize: "13px",
+    fontWeight: 700,
+  },
+  transactionHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: "10px",
+    marginTop: "20px",
+    marginBottom: "12px",
+  },
+  transactionTitle: {
+    fontSize: "16px",
+    fontWeight: 900,
+    margin: 0,
+  },
+  refreshButton: {
+    background: "#fff",
+    border: "1px solid #111",
+    borderRadius: "7px",
+    padding: "7px 10px",
+    fontSize: "10px",
+    fontWeight: 900,
+    cursor: "pointer",
+  },
+  transactionRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: "12px",
+    padding: "14px 0",
+    borderTop: "1px solid #eee",
+    fontSize: "13px",
+  },
+  transactionDetails: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "5px",
+    minWidth: 0,
+  },
+  walletFootnote: {
+    color: "#888",
+    fontSize: "11px",
+    lineHeight: 1.5,
+    marginTop: "18px",
+    marginBottom: 0,
   },
 };
