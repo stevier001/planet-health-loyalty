@@ -1,6 +1,5 @@
 
 import { NextRequest, NextResponse } from "next/server";
-import { randomUUID } from "crypto";
 import { verifyStaffSession } from "../../../../lib/staff-auth";
 
 export const runtime = "nodejs";
@@ -24,6 +23,7 @@ export async function POST(request: NextRequest) {
     const transactionType = body.transactionType;
     const amount = body.amount;
     const description = body.description;
+    const idempotencyKey = body.idempotencyKey;
 
     if (
       typeof customerId !== "string" ||
@@ -54,6 +54,18 @@ export async function POST(request: NextRequest) {
     ) {
       return NextResponse.json(
         { success: false, message: "Enter a valid amount up to £10,000" },
+        { status: 400 }
+      );
+    }
+
+    if (
+      typeof idempotencyKey !== "string" ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+        idempotencyKey
+      )
+    ) {
+      return NextResponse.json(
+        { success: false, message: "Invalid transaction key" },
         { status: 400 }
       );
     }
@@ -137,7 +149,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 4. Connect to Supabase using the private server key.
+    // 4. Connect to Supabase.
     const supabaseUrl = process.env.SUPABASE_URL;
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -145,10 +157,7 @@ export async function POST(request: NextRequest) {
       throw new Error("Supabase settings are missing");
     }
 
-    // 5. Create a unique transaction key.
-    const idempotencyKey = randomUUID();
-
-    // 6. Process balance change and transaction record atomically.
+    // 5. Process the wallet transaction.
     const walletResponse = await fetch(
       `${supabaseUrl.replace(/\/$/, "")}/rest/v1/rpc/process_wallet_transaction`,
       {
@@ -167,7 +176,7 @@ export async function POST(request: NextRequest) {
             (transactionType === "credit"
               ? "Wallet top-up"
               : "Wallet purchase"),
-          p_reference: `PH-${Date.now()}`,
+          p_reference: `PH-${idempotencyKey}`,
           p_idempotency_key: idempotencyKey,
           p_created_by: "staff_portal",
         }),
@@ -197,7 +206,7 @@ export async function POST(request: NextRequest) {
       throw new Error("Unable to process wallet transaction");
     }
 
-    // 7. Return the updated wallet balance.
+    // 6. Return the updated wallet balance.
     return NextResponse.json({
       success: true,
       transactionId: walletData.transaction_id,
