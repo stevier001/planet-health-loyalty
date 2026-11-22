@@ -1,96 +1,160 @@
-
-"use client";
-
-import { useEffect, useRef, useState } from "react";
-
-type Customer = {
-  id: string;
-  firstName: string;
-  lastName: string;
-  email: string;
-  stamps: number;
-};
-
-type WalletTransaction = {
-  id: string;
-  transaction_type: "credit" | "debit";
-  amount_pence: number;
-  balance_after_pence: number;
-  description: string | null;
-  reference: string | null;
-  created_at: string;
-};
-
-type WalletMode = "credit" | "debit";
-
-export default function StaffPage() {
-  const [pin, setPin] = useState("");
-  const [authenticated, setAuthenticated] = useState(false);
-  const [checking, setChecking] = useState(true);
-  const [loginLoading, setLoginLoading] = useState(false);
-  const [error, setError] = useState("");
-
-  const [search, setSearch] = useState("");
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [selected, setSelected] = useState<Customer | null>(null);
-
-  const [searchLoading, setSearchLoading] = useState(false);
-  const [stampLoading, setStampLoading] = useState(false);
-  const [redeemLoading, setRedeemLoading] = useState(false);
-  const [message, setMessage] = useState("");
-
-  const [scannerOpen, setScannerOpen] = useState(false);
-  const [scannerError, setScannerError] = useState("");
-
-  // Wallet state
-  const [balancePence, setBalancePence] = useState<number | null>(null);
-  const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
-  const [walletLoading, setWalletLoading] = useState(false);
-  const [walletError, setWalletError] = useState("");
-  const [walletMessage, setWalletMessage] = useState("");
-
-  const [walletMode, setWalletMode] = useState<WalletMode | null>(null);
-  const [walletAmount, setWalletAmount] = useState("");
-  const [walletDescription, setWalletDescription] = useState("");
-  const [walletSubmitting, setWalletSubmitting] = useState(false);
-
-  // Prevent an old balance request overwriting a newer customer selection.
-  const walletRequestNumber = useRef(0);
-
-  // Reuse the same key when retrying an identical transaction.
-  const pendingWalletRequest = useRef<{
-    fingerprint: string;
-    key: string;
-  } | null>(null);
-
-  function formatMoney(pence: number) {
-    return (pence / 100).toLocaleString("en-GB", {
-      style: "currency",
-      currency: "GBP",
-    });
+    } catch {
+      setError("Unable to connect to Shopify.");
+    } finally {
+      setSearchLoading(false);
+    }
   }
 
-  // Check staff login session
-  useEffect(() => {
-    async function checkSession() {
-      try {
-        const response = await fetch("/api/staff-session", {
-          cache: "no-store",
-        });
-        setAuthenticated(response.ok);
-      } catch {
+  async function searchCustomers(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    await searchCustomerTerm(search);
+  }
+
+  // Add a stamp
+  async function addStamp() {
+    if (!selected || stampLoading || selected.stamps >= 6) return;
+
+    setStampLoading(true);
+    setError("");
+    setMessage("");
+
+    try {
+      const response = await fetch("/api/stamp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ customerId: selected.id }),
+      });
+
+      const data = await response.json();
+
+      if (response.status === 401) {
         setAuthenticated(false);
-      } finally {
-        setChecking(false);
+        setError("Your staff session has expired. Please log in again.");
+        return;
       }
+
+      if (!response.ok || !data.success) {
+        setError(data.message || "Unable to add stamp.");
+        return;
+      }
+
+      const updatedCustomer = {
+        ...selected,
+        stamps: data.stamps,
+      };
+
+      setSelected(updatedCustomer);
+
+      setCustomers((current) =>
+        current.map((customer) =>
+          customer.id === updatedCustomer.id
+            ? updatedCustomer
+            : customer
+        )
+      );
+
+      setMessage(data.message || "Stamp successfully added.");
+    } catch {
+      setError("Unable to save stamp. Please try again.");
+    } finally {
+      setStampLoading(false);
+    }
+  }
+
+  // Redeem a reward
+  async function redeemReward() {
+    if (!selected || redeemLoading || selected.stamps < 6) return;
+
+    const confirmed = window.confirm(
+      "Confirm that this customer has received their reward? Their six stamps will be reset to zero."
+    );
+
+    if (!confirmed) return;
+
+    setRedeemLoading(true);
+    setError("");
+    setMessage("");
+
+    try {
+      const response = await fetch("/api/redeem-reward", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ customerId: selected.id }),
+      });
+
+      const data = await response.json();
+
+      if (response.status === 401) {
+        setAuthenticated(false);
+        setError("Your staff session has expired. Please log in again.");
+        return;
+      }
+
+      if (!response.ok || !data.success) {
+        setError(data.message || "Unable to redeem reward.");
+        return;
+      }
+
+      const updatedCustomer = {
+        ...selected,
+        stamps: 0,
+      };
+
+      setSelected(updatedCustomer);
+
+      setCustomers((current) =>
+        current.map((customer) =>
+          customer.id === updatedCustomer.id
+            ? updatedCustomer
+            : customer
+        )
+      );
+
+      setMessage(data.message || "Reward successfully redeemed.");
+    } catch {
+      setError("Unable to redeem reward. Please try again.");
+    } finally {
+      setRedeemLoading(false);
+    }
+  }
+
+  // Process a wallet top-up or spend
+  async function processWalletTransaction(
+    e: React.FormEvent<HTMLFormElement>
+  ) {
+    e.preventDefault();
+
+    if (
+      !selected ||
+      walletSubmitting ||
+      !walletMode ||
+      balancePence === null
+    ) {
+      return;
     }
 
-    checkSession();
-  }, []);
+    const amount = Number(walletAmount);
+    const amountPence = Math.round(amount * 100);
 
-  // Load the selected customer's wallet
-  async function loadWallet(customerId: string) {
-    const requestNumber = ++walletRequestNumber.current;
+    if (
+      !Number.isFinite(amount) ||
+      amount <= 0 ||
+      amountPence <= 0 ||
+      Math.round(amount * 100) !== amount * 100 ||
+      amount > 10000
+    ) {
+      setWalletError("Enter a valid amount up to £10,000, with up to 2 decimal places.");
+      return;
+    }
 
-    setWalletLoading(true);
-    setWalletError("");
+    if (walletMode === "debit" && amountPence > balancePence) {
+      setWalletError("Insufficient wallet balance.");
+      return;
+    }
+
+    const description =
+      walletDescription.trim() ||
+      (walletMode === "credit" ? "Wallet top-up" : "Wallet purchase");
+
+    const actionLabel =
+      walletMode === "credit" ? "add to" : "deduct from";
