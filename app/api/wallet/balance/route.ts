@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // 2. Validate customer ID.
+    // 2. Read customer ID.
     const customerId = request.nextUrl.searchParams.get("customerId");
 
     if (
@@ -35,16 +35,14 @@ export async function GET(request: NextRequest) {
       throw new Error("Supabase settings are missing");
     }
 
-    const baseUrl = supabaseUrl.replace(/\/$/, "");
-
     const headers = {
       apikey: serviceKey,
       Authorization: `Bearer ${serviceKey}`,
     };
 
-    // 4. Retrieve this customer's wallet balance.
+    // 4. Get the customer's wallet balance.
     const accountResponse = await fetch(
-      `${baseUrl}/rest/v1/wallet_accounts?customer_id=eq.${encodeURIComponent(customerId)}&select=customer_id,balance_pence,currency`,
+      `${supabaseUrl.replace(/\/$/, "")}/rest/v1/wallet_accounts?customer_id=eq.${encodeURIComponent(customerId)}&select=customer_id,balance_pence,currency,created_at,updated_at`,
       {
         headers,
         cache: "no-store",
@@ -56,15 +54,15 @@ export async function GET(request: NextRequest) {
     }
 
     const accounts = await accountResponse.json();
-
     const account = accounts[0] || {
+      customer_id: customerId,
       balance_pence: 0,
       currency: "GBP",
     };
 
-    // 5. Retrieve the latest 50 transactions.
+    // 5. Get the customer's latest 50 transactions.
     const transactionsResponse = await fetch(
-      `${baseUrl}/rest/v1/wallet_transactions?customer_id=eq.${encodeURIComponent(customerId)}&select=id,transaction_type,amount_pence,balance_after_pence,description,created_at&order=created_at.desc&limit=50`,
+      `${supabaseUrl.replace(/\/$/, "")}/rest/v1/wallet_transactions?customer_id=eq.${encodeURIComponent(customerId)}&select=id,transaction_type,amount_pence,balance_after_pence,description,reference,created_at&order=created_at.desc&limit=50`,
       {
         headers,
         cache: "no-store",
@@ -78,21 +76,15 @@ export async function GET(request: NextRequest) {
     const transactions = await transactionsResponse.json();
 
     // 6. Return wallet information.
-    return NextResponse.json(
-      {
-        success: true,
-        balancePence: Number(account.balance_pence),
-        currency: account.currency || "GBP",
-        transactions,
-      },
-      {
-        headers: {
-          "Cache-Control": "no-store, private",
-        },
-      }
-    );
+    return NextResponse.json({
+      success: true,
+      customerId,
+      balancePence: Number(account.balance_pence),
+      currency: account.currency || "GBP",
+      transactions,
+    });
   } catch (error) {
-    console.error("Staff wallet API error:", error);
+    console.error("Wallet balance API error:", error);
 
     return NextResponse.json(
       {
