@@ -4,8 +4,6 @@ import { verifyStaffSession } from "../../../../lib/staff-auth";
 
 export const runtime = "nodejs";
 
-type TransactionType = "credit" | "debit";
-
 export async function POST(request: NextRequest) {
   try {
     // 1. Verify staff login.
