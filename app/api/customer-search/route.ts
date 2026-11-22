@@ -6,6 +6,7 @@ export const runtime = "nodejs";
 
 export async function GET(request: NextRequest) {
   try {
+    // Verify staff session
     if (!verifyStaffSession(request)) {
       return NextResponse.json(
         { success: false, message: "Staff access required" },
@@ -146,7 +147,9 @@ export async function GET(request: NextRequest) {
       success: true,
       customers,
     });
-  } catch {
+  } catch (error) {
+    console.error("Customer search error:", error);
+
     return NextResponse.json(
       {
         success: false,
