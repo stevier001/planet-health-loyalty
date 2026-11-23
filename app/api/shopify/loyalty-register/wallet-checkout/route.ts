@@ -142,9 +142,7 @@ export async function POST(request: NextRequest) {
     // 3. Read and validate the selected wallet top-up.
 
     const body = await request.json().catch(() => null);
-
     const variantId = String(body?.variantId || "");
-
     const amount = APPROVED_VARIANTS[variantId];
 
     if (!amount) {
@@ -163,7 +161,7 @@ export async function POST(request: NextRequest) {
       `https://${STORE_DOMAIN}/api/${SHOPIFY_API_VERSION}/graphql.json`;
 
     const mutation = `
-      mutation CreateWalletCheckout($input: CartInput) {
+      mutation CreateWalletCheckout($input: CartInput!) {
         cartCreate(input: $input) {
           cart {
             id
@@ -194,7 +192,6 @@ export async function POST(request: NextRequest) {
             ],
           },
         },
-        // No Storefront API token is required for tokenless cart access.
       }),
       cache: "no-store",
     });
@@ -271,7 +268,7 @@ export async function POST(request: NextRequest) {
       !ALLOWED_CHECKOUT_HOSTS.includes(checkout.hostname)
     ) {
       console.error(
-        "Unexpected Shopify checkout URL host:",
+        "Rejected Shopify checkout hostname:",
         checkout.hostname
       );
 
@@ -279,6 +276,7 @@ export async function POST(request: NextRequest) {
         {
           success: false,
           error: "Invalid checkout destination.",
+          checkoutHost: checkout.hostname,
         },
         { status: 502 }
       );
