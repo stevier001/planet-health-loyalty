@@ -3,9 +3,12 @@ import * as crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-// Approved Planet Health wallet top-up variants.
-// Amounts are stored in pence, never taken from the browser.
+// The exact Shopify product allowed to create wallet credits.
+const WALLET_PRODUCT_ID = "16823166435673";
+
+// Approved variants and their fixed wallet credit amounts in pence.
 const WALLET_TOP_UPS: Record<string, number> = {
   "60663988191577": 1000,
   "60663988224345": 2000,
@@ -48,6 +51,24 @@ function normaliseShopDomain(value: string): string {
     .replace(/\/$/, "");
 }
 
+// Convert a Shopify decimal price into integer pence without
+// relying on floating-point multiplication.
+function toPence(value: unknown): number | null {
+  const price = String(value ?? "").trim();
+
+  if (!/^\d+(?:\.\d{1,2})?$/.test(price)) {
+    return null;
+  }
+
+  const parts = price.split(".");
+  const pounds = Number(parts[0]);
+  const pence = Number((parts[1] || "").padEnd(2, "0"));
+
+  const result = pounds * 100 + pence;
+
+  return Number.isSafeInteger(result) ? result : null;
+}
+
 export async function POST(request: NextRequest) {
   try {
     // 1. Read the original request body.
@@ -65,7 +86,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 3. Verify the Shopify store.
+    // 3. Verify the originating Shopify store.
     const shopDomain = request.headers.get(
       "x-shopify-shop-domain"
     );
@@ -84,7 +105,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 4. Only process successful paid orders.
+    // 4. Only process Shopify's paid-order event.
     const topic = request.headers.get("x-shopify-topic");
 
     if (topic !== "orders/paid") {
@@ -95,7 +116,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // 5. Read the paid order.
+    // 5. Parse the order.
     let order: any;
 
     try {
@@ -127,74 +148,135 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 6. Identify the Shopify customer.
+    // 6. Require an actual registered Shopify customer.
     const customerId = String(order.customer?.id || "");
 
     if (!/^\d+$/.test(customerId)) {
-      console.warn(
-        "WALLET WEBHOOK: Paid order has no valid customer ID",
+      console.error(
+        "WALLET WEBHOOK: Paid wallet order has no valid customer",
         orderId
       );
 
-      return NextResponse.json({
-        success: true,
-        ignored: true,
-        message: "No registered Shopify customer",
-      });
+      // Return an error so the failed delivery is visible and
+      // Shopify can retry. Do not silently discard a paid top-up.
+      throw new Error(
+        `Paid order ${orderId} has no registered Shopify customer`
+      );
     }
 
     const customerGid =
       `gid://shopify/Customer/${customerId}`;
 
-    // 7. Find approved wallet top-up variants.
+    // 7. Find line items belonging to the actual wallet product.
     const lineItems = Array.isArray(order.line_items)
       ? order.line_items
       : [];
 
-    const topUps = lineItems
-      .map((item: any) => {
-        const variantId = String(item.variant_id || "");
-        const unitAmount = WALLET_TOP_UPS[variantId];
+    const walletProductLines = lineItems.filter(
+      (item: any) =>
+        String(item.product_id || "") === WALLET_PRODUCT_ID
+    );
 
-        const quantity = Number(item.quantity);
-        const lineItemId = String(item.id || "");
+    if (walletProductLines.length === 0) {
+      return NextResponse.json({
+        success: true,
+        ignored: true,
+        message: "No Planet Health wallet product found",
+      });
+    }
 
-        if (
-          !unitAmount ||
-          !/^\d+$/.test(lineItemId) ||
-          !Number.isInteger(quantity) ||
-          quantity < 1
-        ) {
-          return null;
+    // 8. Validate every wallet product line before crediting anything.
+    const topUps: Array<{
+      lineItemId: string;
+      variantId: string;
+      amountPence: number;
+    }> = [];
+
+    for (const item of walletProductLines) {
+      const variantId = String(item.variant_id || "");
+      const lineItemId = String(item.id || "");
+
+      const amountPence = WALLET_TOP_UPS[variantId];
+
+      if (!amountPence) {
+        throw new Error(
+          `Unapproved wallet variant in order ${orderId}`
+        );
+      }
+
+      if (!/^\d+$/.test(lineItemId)) {
+        throw new Error(
+          `Invalid wallet line item ID in order ${orderId}`
+        );
+      }
+
+      // Only allow one of the six fixed-value top-ups per line.
+      const quantity = Number(item.quantity);
+
+      if (quantity !== 1) {
+        throw new Error(
+          `Invalid wallet top-up quantity in order ${orderId}`
+        );
+      }
+
+      // Verify the actual Shopify line price matches the fixed
+      // advertised top-up price. Shopify prices include VAT here.
+      const actualPricePence = toPence(item.price);
+
+      if (actualPricePence !== amountPence) {
+        throw new Error(
+          `Wallet line price mismatch in order ${orderId}`
+        );
+      }
+
+      // Do not issue full-value wallet credits for discounted items.
+      const totalDiscountPence = toPence(
+        item.total_discount ?? "0.00"
+      );
+
+      if (totalDiscountPence === null || totalDiscountPence !== 0) {
+        throw new Error(
+          `Discounted wallet top-up rejected in order ${orderId}`
+        );
+      }
+
+      // Also check any explicitly allocated line discounts.
+      const discountAllocations = Array.isArray(
+        item.discount_allocations
+      )
+        ? item.discount_allocations
+        : [];
+
+      const hasAllocatedDiscount = discountAllocations.some(
+        (allocation: any) => {
+          const allocated = toPence(allocation.amount);
+
+          return allocated === null || allocated !== 0;
         }
+      );
 
-        const amountPence = unitAmount * quantity;
+      if (hasAllocatedDiscount) {
+        throw new Error(
+          `Wallet discount allocation rejected in order ${orderId}`
+        );
+      }
 
-        if (
-          !Number.isSafeInteger(amountPence) ||
-          amountPence > 1000000
-        ) {
-          return null;
-        }
-
-        return {
-          lineItemId,
-          unitAmount,
-          quantity,
-          amountPence,
-        };
-      })
-      .filter(Boolean);
+      topUps.push({
+        lineItemId,
+        variantId,
+        amountPence,
+      });
+    }
 
     if (topUps.length === 0) {
       return NextResponse.json({
         success: true,
         ignored: true,
-        message: "No approved wallet top-ups found",
+        message: "No valid wallet top-ups found",
       });
     }
 
-    // 8. Connect to Supabase.
+    // 9. Connect to Supabase.
     const supabaseUrl = process.env.SUPABASE_URL;
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -206,11 +288,9 @@ export async function POST(request: NextRequest) {
 
     const processedTransactions = [];
 
-    // 9. Credit each approved top-up through the existing
-    //    central wallet transaction function.
+    // 10. Credit each validated top-up through the existing
+    //     central wallet transaction function.
     for (const topUp of topUps) {
-      if (!topUp) continue;
-
       const idempotencyKey =
         `shopify-order-${orderId}-line-${topUp.lineItemId}`;
 
@@ -242,12 +322,17 @@ export async function POST(request: NextRequest) {
         }
       );
 
-      const walletData = await walletResponse.json();
+      let walletData: any;
 
-      if (
-        !walletResponse.ok ||
-        walletData?.success !== true
-      ) {
+      try {
+        walletData = await walletResponse.json();
+      } catch {
+        throw new Error(
+          `Invalid Supabase response for order ${orderId}`
+        );
+      }
+
+      if (!walletResponse.ok || walletData?.success !== true) {
         console.error(
           "WALLET WEBHOOK: Supabase transaction failed",
           {
@@ -258,12 +343,13 @@ export async function POST(request: NextRequest) {
         );
 
         throw new Error(
-          "Could not process wallet top-up"
+          `Could not process wallet top-up for order ${orderId}`
         );
       }
 
       processedTransactions.push({
         lineItemId: topUp.lineItemId,
+        variantId: topUp.variantId,
         amountPence: topUp.amountPence,
         transactionId: walletData.transaction_id,
         duplicate: walletData.duplicate === true,
@@ -271,7 +357,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // 10. Confirm successful processing.
+    // 11. Confirm successful processing.
     console.log(
       "WALLET WEBHOOK: Order processed successfully",
       {
