@@ -108,22 +108,22 @@ export default function MyPlanetPage() {
   }
 
   if (!data?.authenticated) {
-    return (
-      <main style={styles.page}>
-        <section style={styles.loginCard}>
-          <div style={styles.logo}>MY PLANET<span>.</span></div>
-          <h1>Welcome to your Planet.</h1>
-          <p style={styles.muted}>
-            Your loyalty, rewards and wallet, all in one place.
-          </p>
-          <a href="https://planethealthclub.co.uk/pages/loyalty-rewards"
-            style={styles.button}>
-            Log in to Planet Health
-          </a>
-        </section>
-      </main>
-    );
-  }
+  return (
+    <main style={styles.page}>
+      <section style={styles.loginCard}>
+        <div style={styles.logo}>MY PLANET<span>.</span></div>
+        <h1>Welcome to your Planet.</h1>
+        <p style={styles.muted}>
+          Your loyalty, rewards and wallet, all in one place.
+        </p>
+        <a href="https://planethealthclub.co.uk/pages/loyalty-rewards"
+          style={styles.button}>
+          Log in to Planet Health
+        </a>
+      </section>
+    </main>
+  );
+}
 
   const customer = data.customer!;
   const loyalty = data.loyalty!;
