@@ -7,14 +7,57 @@ export const dynamic = "force-dynamic";
 
 const SESSION_LIFETIME_SECONDS = 30 * 24 * 60 * 60;
 
+const ALLOWED_ORIGINS = [
+  "https://planethealthclub.co.uk",
+  "https://www.planethealthclub.co.uk",
+  "https://planet-health-loyalty.vercel.app",
+];
+
+const MY_PLANET_URL =
+  "https://planet-health-loyalty.vercel.app/my-planet/";
+
 function hashToken(token: string): string {
   return crypto.createHash("sha256").update(token).digest("hex");
 }
 
+function isAllowedOrigin(request: NextRequest): boolean {
+  const origin = request.headers.get("origin");
+
+  return Boolean(origin && ALLOWED_ORIGINS.includes(origin));
+}
+
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json().catch(() => null);
-    const ticket = body?.ticket;
+    // Only accept requests originating from our own storefront or app.
+    if (!isAllowedOrigin(request)) {
+      return NextResponse.json(
+        { success: false, error: "Request origin not allowed." },
+        { status: 403 }
+      );
+    }
+
+    // Support both the browser form handoff and existing JSON requests.
+    const contentType = request.headers.get("content-type") || "";
+
+    let ticket: unknown;
+    let browserHandoff = false;
+
+    if (
+      contentType.includes("application/x-www-form-urlencoded") ||
+      contentType.includes("multipart/form-data")
+    ) {
+      const formData = await request.formData();
+      ticket = formData.get("ticket");
+      browserHandoff = true;
+    } else if (contentType.includes("application/json")) {
+      const body = await request.json().catch(() => null);
+      ticket = body?.ticket;
+    } else {
+      return NextResponse.json(
+        { success: false, error: "Unsupported request format." },
+        { status: 415 }
+      );
+    }
 
     if (typeof ticket !== "string" || !/^[a-f0-9]{64}$/.test(ticket)) {
       return NextResponse.json(
@@ -31,6 +74,7 @@ export async function POST(request: NextRequest) {
     }
 
     const baseUrl = supabaseUrl.replace(/\/$/, "");
+
     const headers = {
       apikey: serviceKey,
       Authorization: `Bearer ${serviceKey}`,
@@ -42,7 +86,7 @@ export async function POST(request: NextRequest) {
     const now = new Date().toISOString();
 
     // Atomically consume the ticket.
-    // A ticket can only be consumed once and only before expiry.
+    // It can only be used once and only before expiry.
     const consumeResponse = await fetch(
       `${baseUrl}/rest/v1/customer_login_tickets?token_hash=eq.${tokenHash}&consumed_at=is.null&expires_at=gt.${encodeURIComponent(now)}&select=customer_gid`,
       {
@@ -129,18 +173,25 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const response = NextResponse.json(
-      {
-        success: true,
-        expiresIn: SESSION_LIFETIME_SECONDS,
-      },
-      {
-        headers: {
-          "Cache-Control": "no-store, private",
-          Pragma: "no-cache",
-        },
-      }
-    );
+    // Browser handoff: set the session cookie and redirect to My Planet.
+    // JSON callers retain the original JSON response behaviour.
+    const response = browserHandoff
+      ? NextResponse.redirect(MY_PLANET_URL, 303)
+      : NextResponse.json(
+          {
+            success: true,
+            expiresIn: SESSION_LIFETIME_SECONDS,
+          },
+          {
+            headers: {
+              "Cache-Control": "no-store, private",
+              Pragma: "no-cache",
+            },
+          }
+        );
+
+    response.headers.set("Cache-Control", "no-store, private");
+    response.headers.set("Pragma", "no-cache");
 
     response.cookies.set({
       name: "__Host-myplanet_session",
