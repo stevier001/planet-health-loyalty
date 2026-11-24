@@ -6,6 +6,9 @@ export const metadata: Metadata = {
   title: "Planet Health Staff",
   description: "Planet Health staff loyalty and wallet portal.",
   applicationName: "Planet Health Staff",
+  icons: {
+    apple: "/icons/staff-192.png",
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
