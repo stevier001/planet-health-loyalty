@@ -116,10 +116,10 @@ export default function MyPlanetPage() {
         <p style={styles.muted}>
           Your loyalty, rewards and wallet, all in one place.
         </p>
-        <a href="https://planethealthclub.co.uk/pages/loyalty-rewards"
-          style={styles.button}>
-          Log in to Planet Health
-        </a>
+        <a href="https://planethealthclub.co.uk/pages/my-planet"
+  style={styles.button}>
+  Log in to My Planet
+</a>
       </section>
     </main>
   );
