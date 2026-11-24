@@ -1,5 +1,6 @@
 
 import type { Metadata, Viewport } from "next";
+import RegisterMyPlanetServiceWorker from "./register-service-worker";
 
 export const metadata: Metadata = {
   title: "My Planet | Planet Health",
@@ -29,5 +30,10 @@ export default function MyPlanetLayout({
 }: {
   children: React.ReactNode;
 }) {
-  return <>{children}</>;
+  return (
+    <>
+      <RegisterMyPlanetServiceWorker />
+      {children}
+    </>
+  );
 }
