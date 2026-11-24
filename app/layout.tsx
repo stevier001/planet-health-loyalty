@@ -1,5 +1,6 @@
 
 import type { Metadata, Viewport } from "next";
+import RegisterServiceWorker from "./register-service-worker";
 
 export const metadata: Metadata = {
   title: "Planet Health Staff",
@@ -25,7 +26,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <RegisterServiceWorker />
+        {children}
+      </body>
     </html>
   );
 }
