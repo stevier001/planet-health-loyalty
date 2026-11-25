@@ -131,7 +131,7 @@ export async function GET(request: NextRequest) {
           firstName
           lastName
           email
-          metafield(namespace: "loyalty", key: "stamps") {
+          loyaltyStamps: metafield(namespace: "loyalty", key: "stamps") {
             value
           }
           dateOfBirth: metafield(namespace: "custom", key: "date_of_birth") {
@@ -182,7 +182,9 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const parsedStamps = Number(customer.metafield?.value ?? 0);
+    const parsedStamps = Number(
+      customer.loyaltyStamps?.value ?? 0
+    );
 
     const stamps =
       Number.isFinite(parsedStamps)
