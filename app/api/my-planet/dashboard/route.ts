@@ -121,7 +121,7 @@ export async function GET(request: NextRequest) {
       Authorization: `Bearer ${serviceKey}`,
     };
 
-    // 2. Retrieve the customer's Shopify information and stamps.
+    // 2. Retrieve customer details, loyalty stamps and date of birth.
 
     const accessToken = await getShopifyAccessToken();
 
@@ -132,6 +132,9 @@ export async function GET(request: NextRequest) {
           lastName
           email
           metafield(namespace: "loyalty", key: "stamps") {
+            value
+          }
+          dateOfBirth: metafield(namespace: "custom", key: "date_of_birth") {
             value
           }
         }
@@ -179,9 +182,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const parsedStamps = Number(
-      customer.metafield?.value ?? 0
-    );
+    const parsedStamps = Number(customer.metafield?.value ?? 0);
 
     const stamps =
       Number.isFinite(parsedStamps)
@@ -235,6 +236,7 @@ export async function GET(request: NextRequest) {
           firstName: customer.firstName || "",
           lastName: customer.lastName || "",
           email: customer.email || "",
+          dateOfBirth: customer.dateOfBirth?.value || null,
         },
         loyalty: {
           stamps,
