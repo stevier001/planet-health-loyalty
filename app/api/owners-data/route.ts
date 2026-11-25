@@ -71,6 +71,9 @@ type ShopifyCustomer = {
   loyaltyMemberMetafield: {
     value: string;
   } | null;
+  dateOfBirthMetafield: {
+    value: string;
+  } | null;
 };
 
 type ActivityRecord = {
@@ -400,7 +403,7 @@ export async function GET(request: NextRequest) {
     };
 
     // Get every Shopify customer, including their display name,
-    // stamp balance and loyalty membership status.
+    // stamp balance, loyalty membership and date of birth.
     const customers: ShopifyCustomer[] = [];
     let cursor: string | null = null;
     let hasNextPage = true;
@@ -430,6 +433,12 @@ export async function GET(request: NextRequest) {
                     loyaltyMemberMetafield: metafield(
                       namespace: "custom"
                       key: "loyalty_member"
+                    ) {
+                      value
+                    }
+                    dateOfBirthMetafield: metafield(
+                      namespace: "custom"
+                      key: "date_of_birth"
                     ) {
                       value
                     }
@@ -501,6 +510,8 @@ export async function GET(request: NextRequest) {
         ),
         loyaltyMember:
           customer.loyaltyMemberMetafield?.value === "true",
+        dateOfBirth:
+          customer.dateOfBirthMetafield?.value || null,
       };
     });
 
