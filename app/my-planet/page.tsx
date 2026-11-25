@@ -2,6 +2,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import BirthdayCard from "./birthday-card";
 
 type Dashboard = {
   success: boolean;
@@ -10,6 +11,7 @@ type Dashboard = {
     firstName: string;
     lastName: string;
     email: string;
+    dateOfBirth: string | null;
   };
   loyalty?: {
     stamps: number;
@@ -108,22 +110,24 @@ export default function MyPlanetPage() {
   }
 
   if (!data?.authenticated) {
-  return (
-    <main style={styles.page}>
-      <section style={styles.loginCard}>
-        <div style={styles.logo}>MY PLANET<span>.</span></div>
-        <h1>Welcome to your Planet.</h1>
-        <p style={styles.muted}>
-          Your loyalty, rewards and wallet, all in one place.
-        </p>
-        <a href="https://planethealthclub.co.uk/pages/my-planet"
-  style={styles.button}>
-  Log in to My Planet
-</a>
-      </section>
-    </main>
-  );
-}
+    return (
+      <main style={styles.page}>
+        <section style={styles.loginCard}>
+          <div style={styles.logo}>MY PLANET<span>.</span></div>
+          <h1>Welcome to your Planet.</h1>
+          <p style={styles.muted}>
+            Your loyalty, rewards and wallet, all in one place.
+          </p>
+          <a
+            href="https://planethealthclub.co.uk/pages/my-planet"
+            style={styles.button}
+          >
+            Log in to My Planet
+          </a>
+        </section>
+      </main>
+    );
+  }
 
   const customer = data.customer!;
   const loyalty = data.loyalty!;
@@ -227,14 +231,7 @@ export default function MyPlanetPage() {
         )}
       </section>
 
-      <section style={styles.birthday}>
-        <p style={styles.eyebrow}>A LITTLE SOMETHING FOR YOU</p>
-        <h2>Birthday rewards.</h2>
-        <p style={styles.muted}>
-          We're working on something special for your birthday.
-          Watch this space.
-        </p>
-      </section>
+      <BirthdayCard dateOfBirth={customer.dateOfBirth || null} />
 
       <footer style={styles.footer}>
         PLANET HEALTH · YOUR MEMBERSHIP, ALL IN ONE PLACE.
@@ -364,11 +361,6 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#77716B",
     fontSize: "11px",
     margin: "5px 0 0",
-  },
-  birthday: {
-    background: "#E3DCD4",
-    borderRadius: "20px",
-    padding: "24px",
   },
   button: {
     display: "inline-block",
