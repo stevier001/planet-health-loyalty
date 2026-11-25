@@ -22,21 +22,13 @@ function isLeapYear(year: number) {
 function getNextBirthday(dateOfBirth: string, today: Date) {
   const parts = dateOfBirth.split("-").map(Number);
 
-  if (
-    parts.length !== 3 ||
-    !parts.every(Number.isInteger)
-  ) {
+  if (parts.length !== 3 || !parts.every(Number.isInteger)) {
     return null;
   }
 
   const [, month, day] = parts;
 
-  if (
-    month < 1 ||
-    month > 12 ||
-    day < 1 ||
-    day > 31
-  ) {
+  if (month < 1 || month > 12 || day < 1 || day > 31) {
     return null;
   }
 
@@ -93,9 +85,7 @@ function getNextBirthday(dateOfBirth: string, today: Date) {
 
   return {
     date: nextBirthday,
-    daysUntil: Math.round(
-      (nextUtc - todayUtc) / 86400000
-    ),
+    daysUntil: Math.round((nextUtc - todayUtc) / 86400000),
     sortDate: nextUtc,
   };
 }
@@ -105,6 +95,12 @@ function formatBirthday(date: Date) {
     day: "numeric",
     month: "long",
   });
+}
+
+function countdownLabel(daysUntil: number) {
+  if (daysUntil === 0) return "TODAY";
+  if (daysUntil === 1) return "TOMORROW";
+  return `IN ${daysUntil} DAYS`;
 }
 
 export default function BirthdayInsights({
@@ -122,10 +118,7 @@ export default function BirthdayInsights({
 
   const birthdays: BirthdayEntry[] = birthdayCustomers
     .map((customer) => {
-      const next = getNextBirthday(
-        customer.dateOfBirth!,
-        today
-      );
+      const next = getNextBirthday(customer.dateOfBirth!, today);
 
       if (!next) return null;
 
@@ -138,8 +131,7 @@ export default function BirthdayInsights({
       };
     })
     .filter(
-      (birthday): birthday is BirthdayEntry =>
-        birthday !== null
+      (birthday): birthday is BirthdayEntry => birthday !== null
     )
     .sort((a, b) => a.sortDate - b.sortDate);
 
@@ -178,7 +170,9 @@ export default function BirthdayInsights({
           <strong style={styles.metricValue}>
             {birthdayCustomers.length.toLocaleString("en-GB")}
           </strong>
-          <span style={styles.metricNote}>Loyalty members with a DOB</span>
+          <span style={styles.metricNote}>
+            Loyalty members with a DOB
+          </span>
         </div>
 
         <div style={styles.metric}>
@@ -186,7 +180,9 @@ export default function BirthdayInsights({
           <strong style={styles.metricValue}>
             {thisMonth.toLocaleString("en-GB")}
           </strong>
-          <span style={styles.metricNote}>Birthdays in this calendar month</span>
+          <span style={styles.metricNote}>
+            Birthdays in this calendar month
+          </span>
         </div>
 
         <div style={styles.metric}>
@@ -194,16 +190,58 @@ export default function BirthdayInsights({
           <strong style={styles.metricValue}>
             {nextSevenDays.toLocaleString("en-GB")}
           </strong>
-          <span style={styles.metricNote}>Birthdays coming up</span>
+          <span style={styles.metricNote}>
+            Birthdays coming up
+          </span>
         </div>
       </div>
 
+      {/* ALL REGISTERED BIRTHDAYS */}
+      <div style={styles.upcoming}>
+        <div style={styles.upcomingHeader}>
+          <h3 style={styles.upcomingTitle}>ALL REGISTERED BIRTHDAYS.</h3>
+          <span style={styles.upcomingCount}>
+            {birthdays.length} MEMBERS
+          </span>
+        </div>
+
+        {birthdays.length === 0 ? (
+          <p style={styles.empty}>
+            No loyalty members have registered a birthday yet.
+          </p>
+        ) : (
+          <div>
+            {birthdays.map((birthday) => (
+              <div key={birthday.id} style={styles.birthdayRow}>
+                <div style={styles.birthdayPerson}>
+                  <span style={styles.avatar}>
+                    {birthday.name.charAt(0).toUpperCase()}
+                  </span>
+
+                  <div>
+                    <strong style={styles.name}>
+                      {birthday.name}
+                    </strong>
+                    <span style={styles.date}>
+                      Birthday: {birthday.birthday}
+                    </span>
+                  </div>
+                </div>
+
+                <span style={styles.days}>
+                  {countdownLabel(birthday.daysUntil)}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* NEXT 30 DAYS */}
       <div style={styles.upcoming}>
         <div style={styles.upcomingHeader}>
           <h3 style={styles.upcomingTitle}>COMING UP.</h3>
-          <span style={styles.upcomingCount}>
-            NEXT 30 DAYS
-          </span>
+          <span style={styles.upcomingCount}>NEXT 30 DAYS</span>
         </div>
 
         {upcomingBirthdays.length === 0 ? (
@@ -329,6 +367,7 @@ const styles: Record<string, React.CSSProperties> = {
     border: "1px solid #ddd",
     borderRadius: "10px",
     overflow: "hidden",
+    marginBottom: "16px",
   },
   upcomingHeader: {
     display: "flex",
