@@ -1,7 +1,7 @@
-
 "use client";
 
 import { useEffect, useState } from "react";
+import BirthdayInsights from "./birthday-insights";
 
 type Customer = {
   id: string;
@@ -9,6 +9,7 @@ type Customer = {
   email: string;
   stamps: number;
   loyaltyMember: boolean;
+  dateOfBirth: string | null;
 };
 
 type EventType =
@@ -445,6 +446,9 @@ export default function OwnersDashboard() {
                 </p>
               )}
             </section>
+
+            {/* BIRTHDAY INSIGHTS */}
+            <BirthdayInsights customers={loyaltyCustomers} />
 
             {/* CUSTOMER OVERVIEW */}
             <section style={styles.section}>
