@@ -221,8 +221,6 @@ export default function StaffManagement() {
                       #{member.staff_id}
                     </span>
 
-                    <span className="text-white/40">|</span>
-
                     <span
                       className={`rounded-full px-3 py-1 text-xs font-bold ${
                         member.is_active
@@ -233,7 +231,9 @@ export default function StaffManagement() {
                       {member.is_active ? "ACTIVE" : "INACTIVE"}
                     </span>
 
-                    <span className="text-white/40">|</span>
+                    <span className="mx-2 font-bold text-white/50">
+                      |
+                    </span>
 
                     <span className="rounded-full bg-white/10 px-3 py-1 text-xs text-white/70">
                       {member.has_pin ? "PIN ASSIGNED" : "NO PIN"}
