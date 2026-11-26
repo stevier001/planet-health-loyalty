@@ -135,6 +135,39 @@ async function clearFailedAttempts(
   }
 }
 
+// Record successful staff access in Supabase.
+async function recordStaffAccess(
+  supabaseUrl: string,
+  serviceKey: string,
+  staffId: number,
+  eventType: "login" | "logout"
+) {
+  const response = await fetch(
+    `${supabaseUrl.replace(/\/$/, "")}/rest/v1/staff_access_activity`,
+    {
+      method: "POST",
+      headers: {
+        apikey: serviceKey,
+        Authorization: `Bearer ${serviceKey}`,
+        "Content-Type": "application/json",
+        Prefer: "return=minimal",
+      },
+      body: JSON.stringify({
+        staff_id: staffId,
+        event_type: eventType,
+      }),
+      cache: "no-store",
+    }
+  );
+
+  if (!response.ok) {
+    console.error(
+      "Staff access logging failed:",
+      await response.text()
+    );
+  }
+}
+
 async function verifyPin(
   submittedPin: string,
   storedHash: string
@@ -366,6 +399,14 @@ export async function POST(request: NextRequest) {
     if (!updateResponse.ok) {
       throw new Error("Unable to update staff login time");
     }
+
+    // Record the successful login for this staff member.
+    await recordStaffAccess(
+      supabaseUrl,
+      serviceKey,
+      staffId,
+      "login"
+    );
 
     const token = createStaffToken(sessionSecret, staffId);
 
