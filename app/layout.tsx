@@ -3,8 +3,8 @@ import type { Metadata, Viewport } from "next";
 import RegisterServiceWorker from "./register-service-worker";
 
 export const metadata: Metadata = {
-  title: "Planet Health Staff",
-  description: "Planet Health staff loyalty and wallet portal.",
+  title: "Planet Health Analytics",
+  description: "Planet Health Analytics loyalty and wallet portal.",
   applicationName: "Planet Health Analytics",
   manifest: "/staff.webmanifest",
   icons: {
