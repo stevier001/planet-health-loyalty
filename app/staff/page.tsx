@@ -24,7 +24,8 @@ type WalletTransaction = {
 type WalletMode = "credit" | "debit";
 
 export default function StaffPage() {
-  const [pin, setPin] = useState("");
+  const [staffId, setStaffId] = useState("");
+const [pin, setPin] = useState("");
   const [authenticated, setAuthenticated] = useState(false);
   const [checking, setChecking] = useState(true);
   const [loginLoading, setLoginLoading] = useState(false);
