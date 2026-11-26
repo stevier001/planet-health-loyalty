@@ -19,6 +19,242 @@ type StaffAccessEvent = {
   occurred_at: string;
 };
 
+const styles: Record<string, React.CSSProperties> = {
+  section: {
+    marginTop: 32,
+    padding: "28px",
+    border: "1px solid #333",
+    borderRadius: 18,
+    background: "#151515",
+    color: "#fff",
+    fontFamily: "inherit",
+  },
+  header: {
+    display: "flex",
+    flexWrap: "wrap",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 16,
+    marginBottom: 24,
+  },
+  eyebrow: {
+    color: "#B4FF00",
+    fontSize: 11,
+    fontWeight: 800,
+    letterSpacing: "0.2em",
+    textTransform: "uppercase",
+    margin: 0,
+  },
+  heading: {
+    fontSize: 26,
+    fontWeight: 900,
+    margin: "8px 0 4px",
+  },
+  description: {
+    color: "#999",
+    fontSize: 14,
+    margin: 0,
+  },
+  button: {
+    border: "1px solid #444",
+    borderRadius: 8,
+    padding: "10px 14px",
+    background: "#222",
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: 800,
+    cursor: "pointer",
+  },
+  staffCard: {
+    border: "1px solid #333",
+    borderRadius: 12,
+    background: "#101010",
+    padding: 18,
+  },
+  staffHeader: {
+    display: "flex",
+    flexWrap: "wrap",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 16,
+  },
+  staffInfo: {
+    minWidth: 0,
+  },
+  staffIdentity: {
+    display: "flex",
+    flexWrap: "wrap",
+    alignItems: "center",
+    gap: 12,
+  },
+  staffId: {
+    fontSize: 20,
+    fontWeight: 900,
+    marginRight: 4,
+  },
+  activeBadge: {
+    display: "inline-block",
+    borderRadius: 30,
+    padding: "6px 12px",
+    background: "rgba(180,255,0,0.13)",
+    color: "#B4FF00",
+    fontSize: 11,
+    fontWeight: 900,
+    letterSpacing: "0.04em",
+  },
+  inactiveBadge: {
+    display: "inline-block",
+    borderRadius: 30,
+    padding: "6px 12px",
+    background: "rgba(239,68,68,0.15)",
+    color: "#fca5a5",
+    fontSize: 11,
+    fontWeight: 900,
+    letterSpacing: "0.04em",
+  },
+  separator: {
+    color: "#777",
+    fontWeight: 800,
+    margin: "0 3px",
+  },
+  pinBadge: {
+    display: "inline-block",
+    borderRadius: 30,
+    padding: "6px 12px",
+    background: "#292929",
+    color: "#ddd",
+    fontSize: 11,
+    fontWeight: 800,
+  },
+  lastLogin: {
+    margin: "12px 0 0",
+    color: "#999",
+    fontSize: 12,
+  },
+  actions: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  historyButton: {
+    border: "1px solid rgba(180,255,0,0.5)",
+    borderRadius: 8,
+    padding: "10px 12px",
+    background: "transparent",
+    color: "#B4FF00",
+    fontSize: 11,
+    fontWeight: 900,
+    cursor: "pointer",
+  },
+  dangerButton: {
+    border: "1px solid rgba(239,68,68,0.5)",
+    borderRadius: 8,
+    padding: "10px 12px",
+    background: "transparent",
+    color: "#fca5a5",
+    fontSize: 11,
+    fontWeight: 900,
+    cursor: "pointer",
+  },
+  activateButton: {
+    border: "none",
+    borderRadius: 8,
+    padding: "10px 12px",
+    background: "#B4FF00",
+    color: "#111",
+    fontSize: 11,
+    fontWeight: 900,
+    cursor: "pointer",
+  },
+  form: {
+    marginTop: 20,
+    paddingTop: 18,
+    borderTop: "1px solid #333",
+  },
+  label: {
+    display: "block",
+    marginBottom: 10,
+    fontSize: 14,
+    fontWeight: 700,
+  },
+  inputRow: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+  input: {
+    flex: "1 1 180px",
+    minWidth: 0,
+    border: "1px solid #444",
+    borderRadius: 8,
+    padding: "12px 14px",
+    background: "#080808",
+    color: "#fff",
+    fontSize: 14,
+  },
+  saveButton: {
+    border: "none",
+    borderRadius: 8,
+    padding: "12px 20px",
+    background: "#B4FF00",
+    color: "#111",
+    fontSize: 12,
+    fontWeight: 900,
+    cursor: "pointer",
+  },
+  helpText: {
+    marginTop: 9,
+    color: "#888",
+    fontSize: 12,
+  },
+  historyPanel: {
+    marginTop: 20,
+    paddingTop: 20,
+    borderTop: "1px solid #333",
+  },
+  historyHeader: {
+    display: "flex",
+    flexWrap: "wrap",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    marginBottom: 16,
+  },
+  event: {
+    display: "flex",
+    alignItems: "center",
+    gap: 12,
+    borderRadius: 9,
+    background: "#222",
+    padding: 12,
+    marginBottom: 9,
+  },
+  eventIcon: {
+    display: "flex",
+    width: 36,
+    height: 36,
+    flexShrink: 0,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: "50%",
+    background: "rgba(180,255,0,0.13)",
+    color: "#B4FF00",
+    fontSize: 18,
+  },
+  footer: {
+    marginTop: 22,
+    color: "#888",
+    fontSize: 12,
+    lineHeight: 1.6,
+  },
+  notice: {
+    marginBottom: 16,
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 13,
+  },
+};
+
 export default function StaffManagement() {
   const [staff, setStaff] = useState<StaffAccount[]>([]);
   const [loading, setLoading] = useState(true);
@@ -50,9 +286,7 @@ export default function StaffManagement() {
       setStaff(data.staff || []);
     } catch (err) {
       setError(
-        err instanceof Error
-          ? err.message
-          : "Unable to load staff accounts."
+        err instanceof Error ? err.message : "Unable to load staff accounts."
       );
     } finally {
       setLoading(false);
@@ -79,26 +313,19 @@ export default function StaffManagement() {
 
       const response = await fetch(
         `/api/owners-staff?staffId=${staffId}`,
-        {
-          method: "GET",
-          cache: "no-store",
-        }
+        { method: "GET", cache: "no-store" }
       );
 
       const data = await response.json();
 
       if (!response.ok || !data.success) {
-        throw new Error(
-          data.message || "Unable to load access history."
-        );
+        throw new Error(data.message || "Unable to load access history.");
       }
 
       setHistory(data.activity || []);
     } catch (err) {
       setError(
-        err instanceof Error
-          ? err.message
-          : "Unable to load access history."
+        err instanceof Error ? err.message : "Unable to load access history."
       );
       setHistoryStaff(null);
     } finally {
@@ -118,9 +345,7 @@ export default function StaffManagement() {
 
       const response = await fetch("/api/owners-staff", {
         method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           staffId,
           action,
@@ -137,13 +362,10 @@ export default function StaffManagement() {
       setMessage(data.message || "Staff account updated.");
       setSelectedStaff(null);
       setPin("");
-
       await loadStaff();
     } catch (err) {
       setError(
-        err instanceof Error
-          ? err.message
-          : "Unable to update staff account."
+        err instanceof Error ? err.message : "Unable to update staff account."
       );
     } finally {
       setSaving(null);
@@ -163,16 +385,12 @@ export default function StaffManagement() {
   }
 
   return (
-    <section className="mt-8 rounded-2xl border border-white/10 bg-[#151515] p-5 text-white md:p-7">
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+    <section style={styles.section}>
+      <div style={styles.header}>
         <div>
-          <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#B4FF00]">
-            Team administration
-          </p>
-          <h2 className="mt-2 text-2xl font-black">
-            Staff Management
-          </h2>
-          <p className="mt-1 text-sm text-white/50">
+          <p style={styles.eyebrow}>Team administration</p>
+          <h2 style={styles.heading}>Staff Management</h2>
+          <p style={styles.description}>
             Manage individual staff IDs, access PINs and login history.
           </p>
         </div>
@@ -181,71 +399,78 @@ export default function StaffManagement() {
           type="button"
           onClick={loadStaff}
           disabled={loading}
-          className="rounded-lg border border-white/20 px-4 py-2 text-sm font-semibold transition hover:bg-white/10 disabled:opacity-50"
+          style={{ ...styles.button, opacity: loading ? 0.5 : 1 }}
         >
           {loading ? "Loading..." : "Refresh"}
         </button>
       </div>
 
       {message && (
-        <div className="mb-5 rounded-lg border border-[#B4FF00]/30 bg-[#B4FF00]/10 p-3 text-sm text-[#B4FF00]">
+        <div
+          style={{
+            ...styles.notice,
+            border: "1px solid rgba(180,255,0,0.3)",
+            background: "rgba(180,255,0,0.1)",
+            color: "#B4FF00",
+          }}
+        >
           {message}
         </div>
       )}
 
       {error && (
-        <div className="mb-5 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300">
+        <div
+          style={{
+            ...styles.notice,
+            border: "1px solid rgba(239,68,68,0.3)",
+            background: "rgba(239,68,68,0.1)",
+            color: "#fca5a5",
+          }}
+        >
           {error}
         </div>
       )}
 
       {loading ? (
-        <p className="py-8 text-center text-sm text-white/50">
+        <p style={{ padding: 30, textAlign: "center", color: "#999" }}>
           Loading staff accounts...
         </p>
       ) : staff.length === 0 ? (
-        <p className="py-8 text-center text-sm text-white/50">
+        <p style={{ padding: 30, textAlign: "center", color: "#999" }}>
           No staff accounts found.
         </p>
       ) : (
-        <div className="space-y-3">
+        <div style={{ display: "grid", gap: 12 }}>
           {staff.map((member) => (
-            <div
-              key={member.staff_id}
-              className="rounded-xl border border-white/10 bg-black/20 p-4"
-            >
-              <div className="flex flex-wrap items-center justify-between gap-4">
-                <div>
-                  <div className="flex flex-wrap items-center gap-3">
-                    <span className="text-xl font-black">
-                      #{member.staff_id}
-                    </span>
+            <div key={member.staff_id} style={styles.staffCard}>
+              <div style={styles.staffHeader}>
+                <div style={styles.staffInfo}>
+                  <div style={styles.staffIdentity}>
+                    <span style={styles.staffId}>#{member.staff_id}</span>
 
                     <span
-                      className={`rounded-full px-3 py-1 text-xs font-bold ${
+                      style={
                         member.is_active
-                          ? "bg-[#B4FF00]/15 text-[#B4FF00]"
-                          : "bg-red-500/15 text-red-300"
-                      }`}
+                          ? styles.activeBadge
+                          : styles.inactiveBadge
+                      }
                     >
                       {member.is_active ? "ACTIVE" : "INACTIVE"}
                     </span>
 
-                    <span className="mx-2 font-bold text-white/50">
-                      |
-                    </span>
+                    <span style={styles.separator}>|</span>
 
-                    <span className="rounded-full bg-white/10 px-3 py-1 text-xs text-white/70">
+                    <span style={styles.pinBadge}>
                       {member.has_pin ? "PIN ASSIGNED" : "NO PIN"}
                     </span>
                   </div>
 
-                  <p className="mt-2 text-xs text-white/45">
+                  <p style={styles.lastLogin}>
                     Last login: {formatDate(member.last_login_at)}
                   </p>
                 </div>
 
-                <div className="flex flex-wrap gap-2">
+                <div style={styles.actions}>
                   <button
                     type="button"
                     onClick={() => {
@@ -258,7 +483,7 @@ export default function StaffManagement() {
                       setMessage("");
                       setError("");
                     }}
-                    className="rounded-lg border border-white/20 px-3 py-2 text-xs font-bold hover:bg-white/10"
+                    style={styles.button}
                   >
                     {selectedStaff === member.staff_id
                       ? "CANCEL"
@@ -270,7 +495,7 @@ export default function StaffManagement() {
                   <button
                     type="button"
                     onClick={() => loadAccessHistory(member.staff_id)}
-                    className="rounded-lg border border-[#B4FF00]/40 px-3 py-2 text-xs font-bold text-[#B4FF00] hover:bg-[#B4FF00]/10"
+                    style={styles.historyButton}
                   >
                     {historyStaff === member.staff_id
                       ? "HIDE HISTORY"
@@ -284,7 +509,10 @@ export default function StaffManagement() {
                       onClick={() =>
                         updateStaff(member.staff_id, "deactivate")
                       }
-                      className="rounded-lg border border-red-500/40 px-3 py-2 text-xs font-bold text-red-300 hover:bg-red-500/10 disabled:opacity-50"
+                      style={{
+                        ...styles.dangerButton,
+                        opacity: saving === member.staff_id ? 0.5 : 1,
+                      }}
                     >
                       DEACTIVATE
                     </button>
@@ -297,7 +525,13 @@ export default function StaffManagement() {
                       onClick={() =>
                         updateStaff(member.staff_id, "activate")
                       }
-                      className="rounded-lg bg-[#B4FF00] px-3 py-2 text-xs font-black text-black hover:opacity-90 disabled:opacity-30"
+                      style={{
+                        ...styles.activateButton,
+                        opacity:
+                          saving === member.staff_id || !member.has_pin
+                            ? 0.3
+                            : 1,
+                      }}
                     >
                       ACTIVATE
                     </button>
@@ -306,14 +540,14 @@ export default function StaffManagement() {
               </div>
 
               {selectedStaff === member.staff_id && (
-                <div className="mt-5 border-t border-white/10 pt-4">
-                  <label className="mb-2 block text-sm font-semibold">
+                <div style={styles.form}>
+                  <label style={styles.label}>
                     {member.has_pin
                       ? "Enter new personal PIN"
                       : "Create personal PIN"}
                   </label>
 
-                  <div className="flex flex-wrap gap-3">
+                  <div style={styles.inputRow}>
                     <input
                       type="password"
                       inputMode="numeric"
@@ -324,7 +558,7 @@ export default function StaffManagement() {
                         setPin(event.target.value.replace(/\D/g, ""))
                       }
                       placeholder="4–8 digit PIN"
-                      className="min-w-0 flex-1 rounded-lg border border-white/20 bg-black px-4 py-3 text-white outline-none focus:border-[#B4FF00]"
+                      style={styles.input}
                     />
 
                     <button
@@ -336,79 +570,99 @@ export default function StaffManagement() {
                       onClick={() =>
                         updateStaff(member.staff_id, "set_pin", pin)
                       }
-                      className="rounded-lg bg-[#B4FF00] px-5 py-3 text-sm font-black text-black hover:opacity-90 disabled:opacity-30"
+                      style={{
+                        ...styles.saveButton,
+                        opacity:
+                          saving === member.staff_id ||
+                          !/^\d{4,8}$/.test(pin)
+                            ? 0.3
+                            : 1,
+                      }}
                     >
-                      {saving === member.staff_id
-                        ? "SAVING..."
-                        : "SAVE PIN"}
+                      {saving === member.staff_id ? "SAVING..." : "SAVE PIN"}
                     </button>
                   </div>
 
-                  <p className="mt-2 text-xs text-white/40">
-                    Use 4–8 digits. Saving a PIN automatically activates this account.
+                  <p style={styles.helpText}>
+                    Use 4–8 digits. Saving a PIN automatically activates this
+                    account.
                   </p>
                 </div>
               )}
 
               {historyStaff === member.staff_id && (
-                <div className="mt-5 border-t border-white/10 pt-5">
-                  <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                <div style={styles.historyPanel}>
+                  <div style={styles.historyHeader}>
                     <div>
-                      <h3 className="font-bold text-white">
+                      <h3 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>
                         Access History — #{member.staff_id}
                       </h3>
-                      <p className="mt-1 text-xs text-white/40">
+                      <p style={{ margin: "5px 0 0", color: "#888", fontSize: 12 }}>
                         Staff Portal login and logout records
                       </p>
                     </div>
 
-                    <span className="rounded-full bg-white/10 px-3 py-1 text-xs text-white/60">
+                    <span style={styles.pinBadge}>
                       {history.length} events
                     </span>
                   </div>
 
                   {historyLoading ? (
-                    <p className="py-6 text-center text-sm text-white/50">
+                    <p style={{ padding: 20, textAlign: "center", color: "#999" }}>
                       Loading access history...
                     </p>
                   ) : history.length === 0 ? (
-                    <p className="rounded-lg bg-white/5 p-4 text-center text-sm text-white/50">
+                    <p
+                      style={{
+                        borderRadius: 8,
+                        background: "#222",
+                        padding: 16,
+                        textAlign: "center",
+                        color: "#999",
+                        fontSize: 13,
+                      }}
+                    >
                       No access history recorded yet.
                     </p>
                   ) : (
-                    <div className="space-y-3">
+                    <div>
                       {history.map((event) => (
-                        <div
-                          key={event.id}
-                          className="flex items-center gap-3 rounded-lg bg-white/5 p-3"
-                        >
+                        <div key={event.id} style={styles.event}>
                           <span
-                            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-lg ${
-                              event.event_type === "login"
-                                ? "bg-[#B4FF00]/15 text-[#B4FF00]"
-                                : "bg-white/10 text-white/60"
-                            }`}
+                            style={{
+                              ...styles.eventIcon,
+                              ...(event.event_type === "logout"
+                                ? {
+                                    background: "#333",
+                                    color: "#bbb",
+                                  }
+                                : {}),
+                            }}
                           >
                             {event.event_type === "login" ? "↗" : "↙"}
                           </span>
 
-                          <div className="min-w-0 flex-1">
-                            <p className="text-sm font-bold text-white">
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <p style={{ margin: 0, fontSize: 13, fontWeight: 800 }}>
                               {event.event_type === "login"
                                 ? "Logged in"
                                 : "Logged out"}
                             </p>
-                            <p className="mt-1 text-xs text-white/45">
+                            <p style={{ margin: "5px 0 0", color: "#999", fontSize: 12 }}>
                               {formatDate(event.occurred_at)}
                             </p>
                           </div>
 
                           <span
-                            className={`text-xs font-bold uppercase ${
-                              event.event_type === "login"
-                                ? "text-[#B4FF00]"
-                                : "text-white/40"
-                            }`}
+                            style={{
+                              color:
+                                event.event_type === "login"
+                                  ? "#B4FF00"
+                                  : "#999",
+                              fontSize: 11,
+                              fontWeight: 900,
+                              textTransform: "uppercase",
+                            }}
                           >
                             {event.event_type}
                           </span>
@@ -423,7 +677,7 @@ export default function StaffManagement() {
         </div>
       )}
 
-      <p className="mt-6 text-xs leading-relaxed text-white/40">
+      <p style={styles.footer}>
         Staff IDs are permanent and should never be reassigned. Deactivating
         an account preserves its historical records.
       </p>
