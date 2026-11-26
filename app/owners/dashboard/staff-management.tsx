@@ -12,11 +12,21 @@ type StaffAccount = {
   last_login_at: string | null;
 };
 
+type StaffAccessEvent = {
+  id: number;
+  staff_id: number;
+  event_type: "login" | "logout";
+  occurred_at: string;
+};
+
 export default function StaffManagement() {
   const [staff, setStaff] = useState<StaffAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<number | null>(null);
   const [selectedStaff, setSelectedStaff] = useState<number | null>(null);
+  const [historyStaff, setHistoryStaff] = useState<number | null>(null);
+  const [history, setHistory] = useState<StaffAccessEvent[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [pin, setPin] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -52,6 +62,49 @@ export default function StaffManagement() {
   useEffect(() => {
     loadStaff();
   }, [loadStaff]);
+
+  async function loadAccessHistory(staffId: number) {
+    if (historyStaff === staffId) {
+      setHistoryStaff(null);
+      setHistory([]);
+      return;
+    }
+
+    try {
+      setHistoryStaff(staffId);
+      setHistoryLoading(true);
+      setHistory([]);
+      setError("");
+      setMessage("");
+
+      const response = await fetch(
+        `/api/owners-staff?staffId=${staffId}`,
+        {
+          method: "GET",
+          cache: "no-store",
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(
+          data.message || "Unable to load access history."
+        );
+      }
+
+      setHistory(data.activity || []);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Unable to load access history."
+      );
+      setHistoryStaff(null);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
 
   async function updateStaff(
     staffId: number,
@@ -120,7 +173,7 @@ export default function StaffManagement() {
             Staff Management
           </h2>
           <p className="mt-1 text-sm text-white/50">
-            Manage individual staff IDs and access PINs.
+            Manage individual staff IDs, access PINs and login history.
           </p>
         </div>
 
@@ -210,6 +263,16 @@ export default function StaffManagement() {
                         : "SET PIN"}
                   </button>
 
+                  <button
+                    type="button"
+                    onClick={() => loadAccessHistory(member.staff_id)}
+                    className="rounded-lg border border-[#B4FF00]/40 px-3 py-2 text-xs font-bold text-[#B4FF00] hover:bg-[#B4FF00]/10"
+                  >
+                    {historyStaff === member.staff_id
+                      ? "HIDE HISTORY"
+                      : "VIEW ACCESS HISTORY"}
+                  </button>
+
                   {member.is_active ? (
                     <button
                       type="button"
@@ -280,6 +343,75 @@ export default function StaffManagement() {
                   <p className="mt-2 text-xs text-white/40">
                     Use 4–8 digits. Saving a PIN automatically activates this account.
                   </p>
+                </div>
+              )}
+
+              {historyStaff === member.staff_id && (
+                <div className="mt-5 border-t border-white/10 pt-5">
+                  <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <h3 className="font-bold text-white">
+                        Access History — #{member.staff_id}
+                      </h3>
+                      <p className="mt-1 text-xs text-white/40">
+                        Staff Portal login and logout records
+                      </p>
+                    </div>
+
+                    <span className="rounded-full bg-white/10 px-3 py-1 text-xs text-white/60">
+                      {history.length} events
+                    </span>
+                  </div>
+
+                  {historyLoading ? (
+                    <p className="py-6 text-center text-sm text-white/50">
+                      Loading access history...
+                    </p>
+                  ) : history.length === 0 ? (
+                    <p className="rounded-lg bg-white/5 p-4 text-center text-sm text-white/50">
+                      No access history recorded yet.
+                    </p>
+                  ) : (
+                    <div className="space-y-3">
+                      {history.map((event) => (
+                        <div
+                          key={event.id}
+                          className="flex items-center gap-3 rounded-lg bg-white/5 p-3"
+                        >
+                          <span
+                            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-lg ${
+                              event.event_type === "login"
+                                ? "bg-[#B4FF00]/15 text-[#B4FF00]"
+                                : "bg-white/10 text-white/60"
+                            }`}
+                          >
+                            {event.event_type === "login" ? "↗" : "↙"}
+                          </span>
+
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-bold text-white">
+                              {event.event_type === "login"
+                                ? "Logged in"
+                                : "Logged out"}
+                            </p>
+                            <p className="mt-1 text-xs text-white/45">
+                              {formatDate(event.occurred_at)}
+                            </p>
+                          </div>
+
+                          <span
+                            className={`text-xs font-bold uppercase ${
+                              event.event_type === "login"
+                                ? "text-[#B4FF00]"
+                                : "text-white/40"
+                            }`}
+                          >
+                            {event.event_type}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
