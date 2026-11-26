@@ -1287,4 +1287,13 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 5,
     whiteSpace: "nowrap",
   },
+  footer: {
+    marginTop: 20,
+    paddingTop: 4,
+    fontSize: 12,
+    lineHeight: 1.5,
+    fontWeight: 700,
+    letterSpacing: 0.5,
+    color: "#555555",
+  },
 };
