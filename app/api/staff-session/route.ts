@@ -1,6 +1,6 @@
 
 import { NextRequest, NextResponse } from "next/server";
-import { getStaffId } from "../../../../lib/staff-auth";
+import { getStaffId } from "../../../lib/staff-auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
