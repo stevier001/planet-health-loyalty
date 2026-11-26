@@ -1,52 +1,70 @@
 
 import { NextRequest, NextResponse } from "next/server";
-import { createHmac, timingSafeEqual } from "crypto";
+import { getStaffId } from "../../../lib/staff-auth";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
   try {
-    // Verify the existing staff session.
-    const session = request.cookies.get("staff_session")?.value;
-    const secret = process.env.STAFF_SESSION_SECRET;
+    // Verify the individual staff session.
+    const staffId = getStaffId(request);
 
-    if (!session || !secret) {
+    if (staffId === null) {
       return NextResponse.json(
         { success: false, message: "Staff access required" },
         { status: 401 }
       );
     }
 
-    const [expires, signature] = session.split(".");
+    // Connect to Supabase.
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-    if (!expires || !signature || !/^\d+$/.test(expires)) {
-      return NextResponse.json(
-        { success: false, message: "Invalid staff session" },
-        { status: 401 }
-      );
+    if (!supabaseUrl || !serviceKey) {
+      throw new Error("Supabase settings are missing");
     }
 
-    if (Date.now() > Number(expires)) {
-      return NextResponse.json(
-        { success: false, message: "Staff session expired" },
-        { status: 401 }
+    const supabaseHeaders = {
+      apikey: serviceKey,
+      Authorization: `Bearer ${serviceKey}`,
+      "Content-Type": "application/json",
+    };
+
+    // Confirm that this staff account is still active.
+    const staffCheckUrl = new URL(
+      `${supabaseUrl.replace(/\/$/, "")}/rest/v1/staff_accounts`
+    );
+
+    staffCheckUrl.searchParams.set("staff_id", `eq.${staffId}`);
+    staffCheckUrl.searchParams.set("select", "is_active");
+    staffCheckUrl.searchParams.set("limit", "1");
+
+    const staffResponse = await fetch(staffCheckUrl.toString(), {
+      method: "GET",
+      headers: supabaseHeaders,
+      cache: "no-store",
+    });
+
+    if (!staffResponse.ok) {
+      console.error(
+        "Staff account check error:",
+        await staffResponse.text()
       );
+
+      throw new Error("Unable to verify staff account");
     }
 
-    const expected = createHmac("sha256", secret)
-      .update(expires)
-      .digest("hex");
-
-    const receivedBuffer = Buffer.from(signature);
-    const expectedBuffer = Buffer.from(expected);
+    const staffAccounts = await staffResponse.json();
 
     if (
-      receivedBuffer.length !== expectedBuffer.length ||
-      !timingSafeEqual(receivedBuffer, expectedBuffer)
+      !Array.isArray(staffAccounts) ||
+      staffAccounts.length === 0 ||
+      staffAccounts[0].is_active !== true
     ) {
       return NextResponse.json(
-        { success: false, message: "Invalid staff session" },
-        { status: 401 }
+        { success: false, message: "Staff account is inactive" },
+        { status: 403 }
       );
     }
 
@@ -64,23 +82,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Connect to Supabase.
-    const supabaseUrl = process.env.SUPABASE_URL;
-    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-    if (!supabaseUrl || !serviceKey) {
-      throw new Error("Supabase settings are missing");
-    }
-
-    // Record the QR scan only. No stamp is awarded here.
+    // Record the QR scan. No stamp is awarded here.
     const activityResponse = await fetch(
       `${supabaseUrl.replace(/\/$/, "")}/rest/v1/loyalty_activity`,
       {
         method: "POST",
         headers: {
-          apikey: serviceKey,
-          Authorization: `Bearer ${serviceKey}`,
-          "Content-Type": "application/json",
+          ...supabaseHeaders,
           Prefer: "return=minimal",
         },
         body: JSON.stringify({
@@ -88,6 +96,7 @@ export async function POST(request: NextRequest) {
           event_type: "qr_scan",
           metadata: {
             source: "staff_portal",
+            staff_id: staffId,
           },
         }),
         cache: "no-store",
@@ -100,7 +109,10 @@ export async function POST(request: NextRequest) {
       throw new Error("Unable to record QR scan");
     }
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({
+      success: true,
+      staffId,
+    });
 
   } catch (error) {
     console.error("QR scan API error:", error);
