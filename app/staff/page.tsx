@@ -116,7 +116,7 @@ export default function StaffPage() {
         return;
       }
 
-      setBalancePence(data.balance_pence ?? 0);
+      setBalancePence(data.balancePence ?? 0);
       setTransactions(data.transactions || []);
     } catch {
       if (requestNumber !== walletRequestNumber.current) return;
