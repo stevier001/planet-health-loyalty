@@ -1,12 +1,16 @@
 
 import { NextRequest, NextResponse } from "next/server";
-import { verifyStaffSession } from "../../../lib/staff-auth";
+import {
+  verifyStaffSession,
+  getStaffId,
+} from "../../../lib/staff-auth";
 
 export const runtime = "nodejs";
 
 async function recordActivity(
   customerId: string,
   stamps: number,
+  staffId: number | null,
   eventTypes: string[]
 ) {
   const supabaseUrl = process.env.SUPABASE_URL;
@@ -22,6 +26,7 @@ async function recordActivity(
     event_type: eventType,
     metadata: {
       stamps,
+      staff_id: staffId,
       source: "staff_portal",
     },
   }));
@@ -59,6 +64,8 @@ export async function POST(request: NextRequest) {
         { status: 401 }
       );
     }
+
+    const staffId = getStaffId(request);
 
     const body = await request.json();
     const customerId = body.customerId;
@@ -204,7 +211,7 @@ export async function POST(request: NextRequest) {
       events.push("reward_unlocked");
     }
 
-    await recordActivity(customerId, newStamps, events);
+    await recordActivity(customerId, newStamps, staffId, events);
 
     return NextResponse.json({
       success: true,
