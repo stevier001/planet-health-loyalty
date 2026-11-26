@@ -25,7 +25,7 @@ type WalletMode = "credit" | "debit";
 
 export default function StaffPage() {
   const [staffId, setStaffId] = useState("");
-const [pin, setPin] = useState("");
+  const [pin, setPin] = useState("");
   const [authenticated, setAuthenticated] = useState(false);
   const [checking, setChecking] = useState(true);
   const [loginLoading, setLoginLoading] = useState(false);
@@ -49,20 +49,15 @@ const [pin, setPin] = useState("");
   const [walletLoading, setWalletLoading] = useState(false);
   const [walletError, setWalletError] = useState("");
   const [walletMessage, setWalletMessage] = useState("");
-
   const [walletMode, setWalletMode] = useState<WalletMode | null>(null);
   const [walletAmount, setWalletAmount] = useState("");
   const [walletDescription, setWalletDescription] = useState("");
-  const [walletSubmitting, setWalletSubmitting] = useState(false);
+  const [walletTransactionLoading, setWalletTransactionLoading] =
+    useState(false);
 
-  // Prevent an old balance request overwriting a newer customer selection.
+  const scannerRef = useRef<HTMLDivElement | null>(null);
   const walletRequestNumber = useRef(0);
-
-  // Reuse the same key when retrying an identical transaction.
-  const pendingWalletRequest = useRef<{
-    fingerprint: string;
-    key: string;
-  } | null>(null);
+  const pendingWalletRequest = useRef<string | null>(null);
 
   function formatMoney(pence: number) {
     return (pence / 100).toLocaleString("en-GB", {
@@ -121,12 +116,11 @@ const [pin, setPin] = useState("");
         return;
       }
 
-      setBalancePence(data.balancePence);
+      setBalancePence(data.balance_pence ?? 0);
       setTransactions(data.transactions || []);
     } catch {
-      if (requestNumber === walletRequestNumber.current) {
-        setWalletError("Unable to connect to the wallet. Please try again.");
-      }
+      if (requestNumber !== walletRequestNumber.current) return;
+      setWalletError("Unable to load wallet. Please try again.");
     } finally {
       if (requestNumber === walletRequestNumber.current) {
         setWalletLoading(false);
@@ -134,117 +128,7 @@ const [pin, setPin] = useState("");
     }
   }
 
-  // Automatically load wallet whenever a customer is selected
-  useEffect(() => {
-    if (!selected || !authenticated) {
-      walletRequestNumber.current++;
-      setBalancePence(null);
-      setTransactions([]);
-      setWalletLoading(false);
-      setWalletError("");
-      setWalletMessage("");
-      setWalletMode(null);
-      setWalletAmount("");
-      setWalletDescription("");
-      return;
-    }
-
-    setWalletMode(null);
-    setWalletAmount("");
-    setWalletDescription("");
-    pendingWalletRequest.current = null;
-
-    loadWallet(selected.id);
-    // The selected customer ID is the intended trigger.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected?.id, authenticated]);
-
-  // QR camera scanner
-  useEffect(() => {
-    if (!scannerOpen || !authenticated) return;
-
-    let scanner: any = null;
-    let cancelled = false;
-
-    async function startScanner() {
-      try {
-        const { Html5Qrcode } = await import("html5-qrcode");
-
-        if (cancelled) return;
-
-        scanner = new Html5Qrcode("qr-reader");
-
-        await scanner.start(
-          { facingMode: "environment" },
-          {
-            fps: 10,
-            qrbox: { width: 250, height: 250 },
-            aspectRatio: 1,
-          },
-          async (decodedText: string) => {
-            if (cancelled) return;
-
-            const qrNumber = decodedText.trim();
-
-            if (!/^\d+$/.test(qrNumber)) {
-              setScannerError(
-                "This QR code doesn't contain a valid customer number."
-              );
-              return;
-            }
-
-            cancelled = true;
-
-            try {
-              if (scanner?.isScanning) {
-                await scanner.stop();
-              }
-              scanner?.clear();
-            } catch {
-              // Scanner may already have stopped
-            }
-
-            setScannerOpen(false);
-            setScannerError("");
-
-            await searchCustomerTerm(qrNumber, true);
-          },
-          () => {
-            // Ignore normal camera scanning misses
-          }
-        );
-      } catch {
-        if (!cancelled) {
-          setScannerError(
-            "Unable to access the camera. Please allow camera permission and try again."
-          );
-          setScannerOpen(false);
-        }
-      }
-    }
-
-    startScanner();
-
-    return () => {
-      cancelled = true;
-
-      if (scanner) {
-        const stopScanner = async () => {
-          try {
-            if (scanner.isScanning) {
-              await scanner.stop();
-            }
-            scanner.clear();
-          } catch {
-            // Camera may already be stopped
-          }
-        };
-
-        stopScanner();
-      }
-    };
-  }, [scannerOpen, authenticated]);
-
+  // Individual staff login
   async function handleLogin(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setLoginLoading(true);
@@ -254,17 +138,18 @@ const [pin, setPin] = useState("");
       const response = await fetch("/api/staff-login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pin }),
+        body: JSON.stringify({ staffId, pin }),
       });
 
       const data = await response.json();
 
       if (!response.ok || !data.success) {
-        setError(data.message || "Incorrect PIN.");
+        setError(data.message || "Incorrect staff ID or PIN.");
         return;
       }
 
       setAuthenticated(true);
+      setStaffId("");
       setPin("");
     } catch {
       setError("Connection error. Please try again.");
@@ -344,15 +229,11 @@ const [pin, setPin] = useState("");
             console.error("QR scan could not be recorded.");
           }
         } catch (scanError) {
-          console.error("QR scan tracking error:", scanError);
+          console.error("QR scan could not be recorded:", scanError);
         }
-
-        setMessage(
-          "QR code scanned successfully. Select the customer below."
-        );
       }
     } catch {
-      setError("Unable to connect to Shopify.");
+      setError("Unable to search customers. Please try again.");
     } finally {
       setSearchLoading(false);
     }
@@ -363,9 +244,20 @@ const [pin, setPin] = useState("");
     await searchCustomerTerm(search);
   }
 
-  // Add a stamp
+  // Select customer and load their wallet
+  async function selectCustomer(customer: Customer) {
+    setSelected(customer);
+    setError("");
+    setMessage("");
+    setWalletMode(null);
+    setWalletAmount("");
+    setWalletDescription("");
+    await loadWallet(customer.id);
+  }
+
+  // Add a loyalty stamp
   async function addStamp() {
-    if (!selected || stampLoading || selected.stamps >= 6) return;
+    if (!selected || stampLoading) return;
 
     setStampLoading(true);
     setError("");
@@ -419,7 +311,7 @@ const [pin, setPin] = useState("");
     if (!selected || redeemLoading || selected.stamps < 6) return;
 
     const confirmed = window.confirm(
-      "Confirm that this customer has received their reward? Their six stamps will be reset to zero."
+      "Are you sure you want to redeem this customer's reward?"
     );
 
     if (!confirmed) return;
@@ -477,131 +369,136 @@ const [pin, setPin] = useState("");
   ) {
     e.preventDefault();
 
-    if (
-      !selected ||
-      walletSubmitting ||
-      !walletMode ||
-      balancePence === null
-    ) {
-      return;
-    }
+    if (!selected || walletTransactionLoading || !walletMode) return;
 
     const amount = Number(walletAmount);
-    const amountPence = Math.round(amount * 100);
 
-    if (
-      !Number.isFinite(amount) ||
-      amount <= 0 ||
-      amountPence <= 0 ||
-      Math.round(amount * 100) !== amount * 100 ||
-      amount > 10000
-    ) {
-      setWalletError("Enter a valid amount up to £10,000, with up to 2 decimal places.");
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setWalletError("Please enter a valid amount.");
       return;
     }
 
-    if (walletMode === "debit" && amountPence > balancePence) {
-      setWalletError("Insufficient wallet balance.");
-      return;
-    }
-
-    const description =
-      walletDescription.trim() ||
-      (walletMode === "credit" ? "Wallet top-up" : "Wallet purchase");
-
-    const actionLabel =
-      walletMode === "credit" ? "add to" : "deduct from";
-
-    const confirmed = window.confirm(
-      `Confirm ${formatMoney(amountPence)} ${actionLabel} this customer's wallet?\n\nIMPORTANT: The cash or card payment must already have been completed through the till. This only records the wallet transaction.`
-    );
-
-    if (!confirmed) return;
-
-    setWalletSubmitting(true);
+    setWalletTransactionLoading(true);
     setWalletError("");
     setWalletMessage("");
-
-    const fingerprint = [
-      selected.id,
-      walletMode,
-      amountPence,
-      description,
-    ].join("|");
-
-    if (
-      !pendingWalletRequest.current ||
-      pendingWalletRequest.current.fingerprint !== fingerprint
-    ) {
-      pendingWalletRequest.current = {
-        fingerprint,
-        key: crypto.randomUUID(),
-      };
-    }
-
-    const idempotencyKey = pendingWalletRequest.current.key;
 
     try {
       const response = await fetch("/api/wallet/transaction", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           customerId: selected.id,
-          transactionType: walletMode,
+          type: walletMode,
           amount,
-          description,
-          idempotencyKey,
+          description: walletDescription.trim() || undefined,
         }),
       });
 
       const data = await response.json();
 
       if (response.status === 401) {
-        setWalletError(
-          "Wallet transaction access was denied. Your staff login is still active. Please try again."
-        );
+        setAuthenticated(false);
+        setWalletError("Your staff session has expired. Please log in again.");
         return;
       }
 
       if (!response.ok || !data.success) {
-        setWalletError(data.message || "Unable to process wallet transaction.");
+        setWalletError(data.message || "Unable to process transaction.");
         return;
       }
 
-      // Only clear the key after the server confirms success.
-      pendingWalletRequest.current = null;
-
-      if (typeof data.balancePence === "number") {
-        setBalancePence(data.balancePence);
-      }
+      setWalletMessage(
+        data.message ||
+          (walletMode === "credit"
+            ? "Wallet successfully credited."
+            : "Wallet successfully debited.")
+      );
 
       setWalletAmount("");
       setWalletDescription("");
       setWalletMode(null);
 
       await loadWallet(selected.id);
-
-      setWalletMessage(
-        walletMode === "credit"
-          ? "Money successfully added to the wallet."
-          : "Wallet spending successfully recorded."
-      );
     } catch {
-      // Keep the same key so an identical retry cannot create a duplicate.
-      setWalletError(
-        "We couldn't confirm the transaction. Check the wallet balance and transaction history before trying again."
-      );
+      setWalletError("Unable to process transaction. Please try again.");
     } finally {
-      setWalletSubmitting(false);
+      setWalletTransactionLoading(false);
     }
+  }
+
+  // QR scanner
+  useEffect(() => {
+    if (!scannerOpen || !authenticated) return;
+
+    let scanner: any;
+    let cancelled = false;
+
+    async function startScanner() {
+      try {
+        const { Html5Qrcode } = await import("html5-qrcode");
+
+        if (cancelled || !scannerRef.current) return;
+
+        scanner = new Html5Qrcode("staff-qr-reader");
+
+        await scanner.start(
+          { facingMode: "environment" },
+          {
+            fps: 10,
+            qrbox: { width: 250, height: 250 },
+          },
+          async (decodedText: string) => {
+            if (cancelled) return;
+
+            await scanner.stop();
+            setScannerOpen(false);
+
+            const customerTerm = decodedText.trim();
+
+            if (customerTerm) {
+              await searchCustomerTerm(customerTerm, true);
+            }
+          },
+          () => {}
+        );
+      } catch (error) {
+        console.error("Scanner error:", error);
+        setScannerError(
+          "Unable to access the camera. Please check camera permissions."
+        );
+      }
+    }
+
+    startScanner();
+
+    return () => {
+      cancelled = true;
+
+      if (scanner) {
+        scanner
+          .stop()
+          .catch(() => {})
+          .finally(() => {
+            scanner.clear().catch(() => {});
+          });
+      }
+    };
+  }, [scannerOpen, authenticated]);
+
+  function closeScanner() {
+    setScannerOpen(false);
+    setScannerError("");
   }
 
   if (checking) {
     return (
       <main style={styles.page}>
-        <div style={styles.card}>LOADING STAFF PORTAL...</div>
+        <div style={styles.loginCard}>
+          <div style={styles.logo}>
+            PLANET HEALTH<span style={styles.green}>.</span>
+          </div>
+          <p style={styles.description}>CHECKING STAFF ACCESS...</p>
+        </div>
       </main>
     );
   }
@@ -609,7 +506,7 @@ const [pin, setPin] = useState("");
   if (!authenticated) {
     return (
       <main style={styles.page}>
-        <div style={styles.card}>
+        <div style={styles.loginCard}>
           <div style={styles.logo}>
             PLANET HEALTH<span style={styles.green}>.</span>
           </div>
@@ -623,19 +520,38 @@ const [pin, setPin] = useState("");
           </h1>
 
           <p style={styles.description}>
-            Enter your staff PIN to access the loyalty control panel.
+            Enter your personal staff ID and PIN to access the loyalty control panel.
           </p>
 
           <form onSubmit={handleLogin}>
-            <label style={styles.label}>STAFF PIN</label>
+            <label style={styles.label}>STAFF ID</label>
+
+            <input
+              type="text"
+              inputMode="numeric"
+              autoComplete="username"
+              value={staffId}
+              onChange={(e) =>
+                setStaffId(e.target.value.replace(/\D/g, "").slice(0, 4))
+              }
+              placeholder="Enter your staff ID"
+              maxLength={4}
+              required
+              style={styles.input}
+            />
+
+            <label style={styles.label}>PERSONAL PIN</label>
 
             <input
               type="password"
               inputMode="numeric"
               autoComplete="current-password"
               value={pin}
-              onChange={(e) => setPin(e.target.value)}
+              onChange={(e) =>
+                setPin(e.target.value.replace(/\D/g, "").slice(0, 8))
+              }
               placeholder="Enter your PIN"
+              maxLength={8}
               required
               style={styles.input}
             />
@@ -644,7 +560,7 @@ const [pin, setPin] = useState("");
 
             <button
               type="submit"
-              disabled={loginLoading || !pin}
+              disabled={loginLoading || staffId.length !== 4 || pin.length < 4}
               style={styles.button}
             >
               {loginLoading ? "CHECKING..." : "ACCESS STAFF PORTAL →"}
@@ -709,25 +625,22 @@ const [pin, setPin] = useState("");
                 setMessage("");
                 setScannerOpen(true);
               }}
-              style={styles.scanButton}
+              style={styles.button}
             >
-              ▦ &nbsp; SCAN CUSTOMER QR CODE
+              OPEN CAMERA SCANNER →
             </button>
           ) : (
-            <>
-              <div id="qr-reader" style={styles.qrReader} />
+            <div style={styles.scannerBox}>
+              <div id="staff-qr-reader" ref={scannerRef} />
 
-              <button
-                onClick={() => setScannerOpen(false)}
-                style={styles.cancelScan}
-              >
-                CLOSE CAMERA
+              {scannerError && (
+                <p style={styles.error}>{scannerError}</p>
+              )}
+
+              <button onClick={closeScanner} style={styles.secondaryButton}>
+                CLOSE SCANNER
               </button>
-            </>
-          )}
-
-          {scannerError && (
-            <p style={styles.error}>{scannerError}</p>
+            </div>
           )}
         </section>
 
@@ -766,164 +679,141 @@ const [pin, setPin] = useState("");
               {customers.map((customer) => (
                 <button
                   key={customer.id}
-                  onClick={() => {
-                    setSelected(customer);
-                    setMessage("");
-                    setError("");
-                  }}
+                  onClick={() => selectCustomer(customer)}
                   style={{
                     ...styles.customerButton,
-                    background:
-                      selected?.id === customer.id ? "#B4FF00" : "#fff",
+                    ...(selected?.id === customer.id
+                      ? styles.customerButtonSelected
+                      : {}),
                   }}
                 >
                   <span>
                     <strong>
                       {customer.firstName} {customer.lastName}
                     </strong>
-                    <span style={styles.customerEmail}>
-                      {customer.email}
-                    </span>
+                    <small>{customer.email}</small>
                   </span>
-
-                  <strong>{customer.stamps}/6</strong>
+                  <span style={styles.customerStamps}>
+                    {customer.stamps}/6
+                  </span>
                 </button>
               ))}
             </div>
           )}
         </section>
 
-        {/* CUSTOMER LOYALTY CARD */}
+        {/* SELECTED CUSTOMER */}
         {selected && (
-          <>
-            <section style={styles.loyaltyCard}>
-              <div style={styles.eyebrowGreen}>CUSTOMER LOYALTY CARD</div>
+          <section style={styles.section}>
+            <div style={styles.eyebrow}>CUSTOMER ACCOUNT</div>
 
-              <h2 style={styles.customerName}>
-                {selected.firstName} {selected.lastName}
-              </h2>
+            <h2 style={styles.sectionTitle}>
+              {selected.firstName} {selected.lastName}
+            </h2>
 
-              <p style={styles.customerEmail}>{selected.email}</p>
+            <p style={styles.smallText}>{selected.email}</p>
 
-              <h2 style={styles.sectionTitleWhite}>YOUR REWARDS</h2>
+            <div style={styles.stampCard}>
+              <div style={styles.eyebrow}>LOYALTY CARD</div>
 
-              <div style={styles.stampRow}>
-                {[1, 2, 3, 4, 5, 6].map((number) => (
+              <div style={styles.stampCount}>
+                {selected.stamps}
+                <span>/ 6</span>
+              </div>
+
+              <div style={styles.stampGrid}>
+                {Array.from({ length: 6 }).map((_, index) => (
                   <div
-                    key={number}
+                    key={index}
                     style={{
-                      ...styles.stamp,
-                      background:
-                        number <= selected.stamps ? "#B4FF00" : "transparent",
-                      color:
-                        number <= selected.stamps ? "#111" : "#fff",
+                      ...styles.stampCircle,
+                      ...(index < selected.stamps
+                        ? styles.stampCircleActive
+                        : {}),
                     }}
                   >
-                    {number <= selected.stamps ? "✓" : number}
+                    {index < selected.stamps ? "✓" : ""}
                   </div>
                 ))}
               </div>
 
-              <div style={styles.stampCount}>
-                {selected.stamps} / 6 STAMPS
-              </div>
-
-              {selected.stamps >= 6 ? (
-                <div style={styles.reward}>
-                  <strong>REWARD UNLOCKED!</strong>
-                  <p>This customer has collected all 6 stamps.</p>
-
-                  <button
-                    onClick={redeemReward}
-                    disabled={redeemLoading}
-                    style={styles.redeemButton}
-                  >
-                    {redeemLoading
-                      ? "REDEEMING REWARD..."
-                      : "REDEEM REWARD ✓"}
-                  </button>
-                </div>
-              ) : (
-                <button
-                  onClick={addStamp}
-                  disabled={stampLoading}
-                  style={styles.button}
-                >
-                  {stampLoading ? "SAVING STAMP..." : "ADD STAMP +"}
-                </button>
-              )}
-
-              <p style={styles.cardNote}>
-                Stamps are saved directly to the customer's Shopify record.
+              <p style={styles.smallText}>
+                {selected.stamps >= 6
+                  ? "REWARD READY TO REDEEM"
+                  : `${6 - selected.stamps} more stamps until a reward`}
               </p>
-            </section>
+            </div>
 
-            {/* CUSTOMER WALLET */}
-            <section style={styles.walletCard}>
+            <div style={styles.actionGrid}>
+              <button
+                onClick={addStamp}
+                disabled={stampLoading || selected.stamps >= 6}
+                style={styles.actionButton}
+              >
+                {stampLoading ? "ADDING..." : "＋ ADD STAMP"}
+              </button>
+
+              <button
+                onClick={redeemReward}
+                disabled={redeemLoading || selected.stamps < 6}
+                style={styles.actionButton}
+              >
+                {redeemLoading ? "REDEEMING..." : "✓ REDEEM REWARD"}
+              </button>
+            </div>
+
+            {error && <p style={styles.error}>{error}</p>}
+            {message && <p style={styles.message}>{message}</p>}
+
+            {/* WALLET */}
+            <div style={styles.walletCard}>
               <div style={styles.walletHeader}>
                 <div>
-                  <div style={styles.walletEyebrow}>CUSTOMER WALLET</div>
-                  <h2 style={styles.walletTitle}>AVAILABLE BALANCE</h2>
+                  <div style={styles.eyebrow}>PLANET HEALTH</div>
+                  <h3 style={styles.walletTitle}>CUSTOMER WALLET</h3>
                 </div>
-
-                <span style={styles.walletTag}>SEPARATE FROM STAMPS</span>
+                <div style={styles.walletIcon}>£</div>
               </div>
 
               {walletLoading ? (
-                <div style={styles.walletLoading}>LOADING WALLET...</div>
-              ) : balancePence !== null ? (
-                <div style={styles.walletBalance}>
-                  {formatMoney(balancePence)}
-                </div>
+                <p style={styles.smallText}>LOADING WALLET...</p>
               ) : (
-                <div style={styles.walletLoading}>
-                  WALLET BALANCE UNAVAILABLE
+                <div style={styles.walletBalance}>
+                  {balancePence === null
+                    ? "—"
+                    : formatMoney(balancePence)}
                 </div>
               )}
 
               {walletError && (
-                <p style={styles.walletError}>{walletError}</p>
+                <p style={styles.error}>{walletError}</p>
               )}
 
               {walletMessage && (
-                <p style={styles.walletSuccess}>{walletMessage}</p>
+                <p style={styles.message}>{walletMessage}</p>
               )}
 
               <div style={styles.walletActions}>
                 <button
-                  type="button"
-                  disabled={walletLoading || balancePence === null || walletSubmitting}
                   onClick={() => {
                     setWalletMode("credit");
-                    setWalletAmount("");
-                    setWalletDescription("");
                     setWalletError("");
                     setWalletMessage("");
                   }}
-                  style={{
-                    ...styles.walletAction,
-                    ...(walletMode === "credit" ? styles.walletActionActive : {}),
-                  }}
+                  style={styles.walletActionButton}
                 >
-                  <span style={styles.walletActionIcon}>⊕</span>
+                  <span style={styles.walletActionIcon}>＋</span>
                   <strong>ADD MONEY</strong>
-                  <span>Record a till top-up</span>
+                  <span>Credit customer wallet</span>
                 </button>
 
                 <button
-                  type="button"
-                  disabled={walletLoading || balancePence === null || walletSubmitting}
                   onClick={() => {
                     setWalletMode("debit");
-                    setWalletAmount("");
-                    setWalletDescription("");
                     setWalletError("");
                     setWalletMessage("");
                   }}
-                  style={{
-                    ...styles.walletAction,
-                    ...(walletMode === "debit" ? styles.walletActionActive : {}),
-                  }}
+                  style={styles.walletActionButton}
                 >
                   <span style={styles.walletActionIcon}>▣</span>
                   <strong>SPEND MONEY</strong>
@@ -937,7 +827,9 @@ const [pin, setPin] = useState("");
                   style={styles.walletForm}
                 >
                   <h3 style={styles.walletFormTitle}>
-                    {walletMode === "credit" ? "ADD MONEY TO WALLET" : "SPEND FROM WALLET"}
+                    {walletMode === "credit"
+                      ? "ADD MONEY TO WALLET"
+                      : "SPEND FROM WALLET"}
                   </h3>
 
                   <p style={styles.walletHint}>
@@ -962,304 +854,281 @@ const [pin, setPin] = useState("");
 
                   <label style={styles.label}>DESCRIPTION (OPTIONAL)</label>
                   <input
-                    type="text"
-                    maxLength={200}
                     value={walletDescription}
                     onChange={(e) => setWalletDescription(e.target.value)}
-                    placeholder={
-                      walletMode === "credit"
-                        ? "e.g. Wallet top-up"
-                        : "e.g. Lunch purchase"
-                    }
+                    placeholder="e.g. Till top-up or lunch"
                     style={styles.input}
                   />
 
+                  {walletError && (
+                    <p style={styles.error}>{walletError}</p>
+                  )}
+
                   <button
                     type="submit"
-                    disabled={walletSubmitting || !walletAmount || balancePence === null}
+                    disabled={walletTransactionLoading}
                     style={styles.button}
                   >
-                    {walletSubmitting
+                    {walletTransactionLoading
                       ? "PROCESSING..."
                       : walletMode === "credit"
                         ? "CONFIRM TOP-UP →"
-                        : "CONFIRM WALLET SPEND →"}
+                        : "CONFIRM SPEND →"}
                   </button>
 
                   <button
                     type="button"
-                    disabled={walletSubmitting}
-                    onClick={() => {
-                      setWalletMode(null);
-                      setWalletAmount("");
-                      setWalletDescription("");
-                      setWalletError("");
-                    }}
-                    style={styles.walletCancel}
+                    onClick={() => setWalletMode(null)}
+                    style={styles.secondaryButton}
                   >
                     CANCEL
                   </button>
                 </form>
               )}
 
-              <div style={styles.transactionHeader}>
+              {/* TRANSACTION HISTORY */}
+              <div style={styles.transactionSection}>
                 <h3 style={styles.transactionTitle}>RECENT TRANSACTIONS</h3>
 
-                <button
-                  type="button"
-                  disabled={walletLoading}
-                  onClick={() => loadWallet(selected.id)}
-                  style={styles.refreshButton}
-                >
-                  REFRESH ↻
-                </button>
-              </div>
-
-              {walletLoading ? (
-                <p style={styles.walletHint}>Loading transactions...</p>
-              ) : transactions.length === 0 ? (
-                <p style={styles.walletHint}>No wallet transactions yet.</p>
-              ) : (
-                <div>
-                  {transactions.map((transaction) => (
-                    <div key={transaction.id} style={styles.transactionRow}>
-                      <div style={styles.transactionDetails}>
+                {transactions.length === 0 ? (
+                  <p style={styles.smallText}>
+                    No wallet transactions yet.
+                  </p>
+                ) : (
+                  transactions.map((transaction) => (
+                    <div
+                      key={transaction.id}
+                      style={styles.transactionRow}
+                    >
+                      <div>
                         <strong>
                           {transaction.description ||
                             (transaction.transaction_type === "credit"
                               ? "Wallet top-up"
-                              : "Wallet purchase")}
+                              : "Wallet spend")}
                         </strong>
-                        <span>
+                        <small>
                           {new Date(transaction.created_at).toLocaleString(
-                            "en-GB",
-                            {
-                              dateStyle: "medium",
-                              timeStyle: "short",
-                            }
+                            "en-GB"
                           )}
-                        </span>
+                        </small>
                       </div>
 
-                      <strong
-                        style={{
-                          color:
-                            transaction.transaction_type === "credit"
-                              ? "#087A32"
-                              : "#111",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {transaction.transaction_type === "credit" ? "+" : "−"}
-                        {formatMoney(transaction.amount_pence)}
-                      </strong>
+                      <div style={styles.transactionAmount}>
+                        <strong
+                          style={{
+                            color:
+                              transaction.transaction_type === "credit"
+                                ? "#45e017"
+                                : "#ffffff",
+                          }}
+                        >
+                          {transaction.transaction_type === "credit"
+                            ? "+"
+                            : "-"}
+                          {formatMoney(transaction.amount_pence)}
+                        </strong>
+                        <small>
+                          Balance:{" "}
+                          {formatMoney(transaction.balance_after_pence)}
+                        </small>
+                      </div>
                     </div>
-                  ))}
-                </div>
-              )}
-
-              <p style={styles.walletFootnote}>
-                Wallet credit is separate from loyalty stamps. All cash or card
-                payments must be completed through the till first.
-              </p>
-            </section>
-          </>
+                  ))
+                )}
+              </div>
+            </div>
+          </section>
         )}
 
         <footer style={styles.footer}>
-          PLANET HEALTH · LOYALTY REWARDS
+          PLANET HEALTH · STAFF ONLY
         </footer>
       </div>
     </main>
   );
 }
 
-const styles: { [key: string]: React.CSSProperties } = {
+const styles: Record<string, React.CSSProperties> = {
   page: {
     minHeight: "100vh",
-    background: "#F0EBE6",
-    color: "#111",
-    fontFamily: "Arial, sans-serif",
-    display: "flex",
-    justifyContent: "center",
-    padding: "35px 18px",
-    boxSizing: "border-box",
+    background: "#101010",
+    color: "#ffffff",
+    padding: "24px 16px",
+    fontFamily: "Arial, Helvetica, sans-serif",
   },
-  card: {
+  loginCard: {
     width: "100%",
-    maxWidth: "460px",
-    alignSelf: "center",
-    background: "#fff",
-    border: "2px solid #111",
-    borderRadius: "22px",
-    padding: "30px",
+    maxWidth: 420,
+    margin: "60px auto",
+    padding: 32,
+    background: "#191919",
+    border: "1px solid #333333",
+    borderRadius: 18,
     boxSizing: "border-box",
   },
   dashboard: {
     width: "100%",
-    maxWidth: "760px",
+    maxWidth: 760,
+    margin: "0 auto",
+  },
+  logo: {
+    fontSize: 22,
+    fontWeight: 900,
+    letterSpacing: "-1px",
+    marginBottom: 12,
+  },
+  green: {
+    color: "#45e017",
+  },
+  eyebrow: {
+    fontSize: 10,
+    fontWeight: 800,
+    letterSpacing: 2,
+    color: "#45e017",
+    marginBottom: 10,
+  },
+  heading: {
+    fontSize: "clamp(38px, 8vw, 64px)",
+    fontWeight: 900,
+    lineHeight: 0.95,
+    letterSpacing: "-3px",
+    margin: "18px 0",
+  },
+  description: {
+    color: "#aaaaaa",
+    fontSize: 14,
+    lineHeight: 1.6,
+    marginBottom: 28,
+  },
+  label: {
+    display: "block",
+    fontSize: 10,
+    fontWeight: 800,
+    letterSpacing: 1.5,
+    color: "#aaaaaa",
+    margin: "18px 0 8px",
+  },
+  input: {
+    display: "block",
+    width: "100%",
+    boxSizing: "border-box",
+    background: "#101010",
+    border: "1px solid #444444",
+    borderRadius: 9,
+    color: "#ffffff",
+    padding: "15px 14px",
+    fontSize: 16,
+    outline: "none",
+    marginBottom: 14,
+  },
+  button: {
+    display: "block",
+    width: "100%",
+    background: "#45e017",
+    color: "#101010",
+    border: "none",
+    borderRadius: 9,
+    padding: "16px",
+    fontSize: 12,
+    fontWeight: 900,
+    letterSpacing: 1,
+    cursor: "pointer",
+    marginTop: 16,
+  },
+  secondaryButton: {
+    display: "block",
+    width: "100%",
+    background: "transparent",
+    color: "#ffffff",
+    border: "1px solid #555555",
+    borderRadius: 9,
+    padding: "13px",
+    fontSize: 11,
+    fontWeight: 800,
+    letterSpacing: 1,
+    cursor: "pointer",
+    marginTop: 12,
+  },
+  error: {
+    color: "#ff6868",
+    fontSize: 13,
+    lineHeight: 1.5,
+  },
+  message: {
+    color: "#45e017",
+    fontSize: 13,
+    lineHeight: 1.5,
+  },
+  footer: {
+    textAlign: "center",
+    color: "#666666",
+    fontSize: 9,
+    fontWeight: 800,
+    letterSpacing: 2,
+    marginTop: 35,
   },
   header: {
     display: "flex",
-    justifyContent: "space-between",
     alignItems: "center",
-    gap: 15,
-    flexWrap: "wrap",
-    marginBottom: 45,
+    justifyContent: "space-between",
+    gap: 16,
+    marginBottom: 35,
   },
-  logo: {
-    fontSize: "23px",
-    fontWeight: 900,
-    letterSpacing: "-1px",
-  },
-  green: { color: "#45e017" },
-  eyebrow: {
-    marginTop: "12px",
-    fontSize: "11px",
-    fontWeight: 900,
-    letterSpacing: "2px",
-  },
-  eyebrowGreen: {
-    color: "#B4FF00",
-    fontSize: "12px",
-    fontWeight: 900,
-    letterSpacing: "2px",
-  },
-  heading: {
-    fontSize: "clamp(38px, 8vw, 58px)",
-    lineHeight: 1,
-    margin: "15px 0",
-    fontWeight: 900,
-  },
-  description: {
-    color: "#666",
-    fontSize: "15px",
-    lineHeight: 1.6,
-    marginBottom: "25px",
+  logout: {
+    background: "transparent",
+    border: "1px solid #555555",
+    color: "#ffffff",
+    padding: "11px 16px",
+    borderRadius: 8,
+    fontSize: 10,
+    fontWeight: 800,
+    letterSpacing: 1,
+    cursor: "pointer",
   },
   section: {
-    background: "#fff",
-    border: "2px solid #111",
-    borderRadius: "18px",
-    padding: "25px",
-    marginBottom: "22px",
+    background: "#191919",
+    border: "1px solid #333333",
+    borderRadius: 16,
+    padding: 22,
+    marginBottom: 22,
+  },
+  sectionTitle: {
+    fontSize: 22,
+    fontWeight: 900,
+    letterSpacing: "-0.5px",
+    margin: "8px 0",
+  },
+  smallText: {
+    color: "#999999",
+    fontSize: 12,
+    lineHeight: 1.6,
   },
   scannerSection: {
-    background: "#fff",
-    border: "2px solid #111",
-    borderRadius: "18px",
-    padding: "25px",
-    marginBottom: "22px",
+    background: "#191919",
+    border: "1px solid #333333",
+    borderRadius: 16,
+    padding: 22,
+    marginBottom: 22,
   },
   scannerHeading: {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
-    gap: 12,
   },
   scannerTitle: {
-    fontSize: "25px",
+    fontSize: 24,
     fontWeight: 900,
-    margin: "10px 0",
+    margin: "4px 0 10px",
   },
   scannerIcon: {
-    fontSize: "42px",
-    fontWeight: 900,
-    color: "#111",
+    fontSize: 34,
+    color: "#45e017",
   },
-  scanButton: {
-    width: "100%",
-    padding: "20px",
-    background: "#B4FF00",
-    color: "#111",
-    border: "2px solid #111",
-    borderRadius: "10px",
-    fontWeight: 900,
-    fontSize: "15px",
-    cursor: "pointer",
-    marginTop: "12px",
-  },
-  qrReader: {
-    width: "100%",
-    marginTop: "18px",
+  scannerBox: {
+    marginTop: 18,
     overflow: "hidden",
-    borderRadius: "12px",
-  },
-  cancelScan: {
-    width: "100%",
-    padding: "15px",
-    background: "#fff",
-    color: "#111",
-    border: "2px solid #111",
-    borderRadius: "10px",
-    fontWeight: 900,
-    cursor: "pointer",
-    marginTop: "12px",
-  },
-  sectionTitle: {
-    fontSize: "19px",
-    fontWeight: 900,
-    marginTop: 0,
-  },
-  sectionTitleWhite: {
-    fontSize: "20px",
-    fontWeight: 900,
-    marginTop: 30,
-    color: "#fff",
-  },
-  smallText: {
-    fontSize: "13px",
-    color: "#666",
-    lineHeight: 1.6,
-  },
-  label: {
-    display: "block",
-    fontSize: "11px",
-    fontWeight: 900,
-    marginBottom: "9px",
-    letterSpacing: "1px",
-  },
-  input: {
-    width: "100%",
-    boxSizing: "border-box",
-    padding: "17px",
-    border: "2px solid #111",
-    borderRadius: "10px",
-    fontSize: "16px",
-    marginTop: "10px",
-    marginBottom: "12px",
-  },
-  button: {
-    width: "100%",
-    padding: "18px",
-    background: "#B4FF00",
-    color: "#111",
-    border: "2px solid #111",
-    borderRadius: "10px",
-    fontWeight: 900,
-    fontSize: "14px",
-    cursor: "pointer",
-    marginTop: "10px",
-  },
-  redeemButton: {
-    width: "100%",
-    padding: "16px",
-    background: "#111",
-    color: "#B4FF00",
-    border: "2px solid #111",
-    borderRadius: "10px",
-    fontWeight: 900,
-    fontSize: "14px",
-    cursor: "pointer",
-    marginTop: "15px",
-  },
-  logout: {
-    padding: "12px 18px",
-    background: "#fff",
-    border: "2px solid #111",
-    borderRadius: "10px",
-    fontWeight: 900,
-    cursor: "pointer",
+    borderRadius: 12,
   },
   customerButton: {
     width: "100%",
@@ -1267,266 +1136,172 @@ const styles: { [key: string]: React.CSSProperties } = {
     justifyContent: "space-between",
     alignItems: "center",
     gap: 12,
+    background: "#101010",
+    border: "1px solid #333333",
+    borderRadius: 10,
+    padding: 15,
+    color: "#ffffff",
     textAlign: "left",
-    padding: "15px",
-    border: "1px solid #111",
-    borderRadius: "10px",
-    marginTop: "9px",
+    marginTop: 9,
     cursor: "pointer",
-    color: "#111",
   },
-  customerEmail: {
-    display: "block",
-    fontSize: "12px",
-    color: "#999",
-    marginTop: "5px",
-    overflowWrap: "anywhere",
+  customerButtonSelected: {
+    border: "1px solid #45e017",
   },
-  loyaltyCard: {
-    background: "#111",
-    color: "#fff",
-    borderRadius: "18px",
-    padding: "25px",
-    marginBottom: "22px",
-    boxSizing: "border-box",
-    width: "100%",
-    minWidth: 0,
+  customerStamps: {
+    color: "#45e017",
+    fontWeight: 900,
+    fontSize: 14,
   },
-  customerName: {
-    fontSize: "25px",
-    marginBottom: "5px",
+  stampCard: {
+    background: "#101010",
+    border: "1px solid #333333",
+    borderRadius: 14,
+    padding: 20,
+    marginTop: 22,
+    textAlign: "center",
   },
-  stampRow: {
+  stampCount: {
+    fontSize: 46,
+    fontWeight: 900,
+    margin: "12px 0",
+  },
+  stampGrid: {
     display: "grid",
-    gridTemplateColumns: "repeat(6, minmax(0, 1fr))",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: "6px",
-    margin: "25px 0",
-    width: "100%",
-    minWidth: 0,
-    boxSizing: "border-box",
+    gridTemplateColumns: "repeat(6, 1fr)",
+    gap: 8,
+    margin: "20px 0",
   },
-  stamp: {
+  stampCircle: {
     width: "100%",
-    height: "auto",
-    minWidth: 0,
-    minHeight: 0,
-    maxWidth: "none",
-    maxHeight: "none",
-    boxSizing: "border-box",
-    aspectRatio: "1 / 1",
-    border: "2px solid #B4FF00",
+    aspectRatio: "1",
     borderRadius: "50%",
+    border: "1px solid #555555",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
+    fontSize: 18,
     fontWeight: 900,
-    fontSize: "clamp(12px, 4vw, 17px)",
-    lineHeight: 1,
-    padding: 0,
-    margin: 0,
-  },
-  stampCount: {
-    color: "#B4FF00",
-    fontWeight: 900,
-    marginBottom: "15px",
-  },
-  reward: {
-    background: "#B4FF00",
-    color: "#111",
-    padding: "18px",
-    borderRadius: "10px",
-    marginTop: "15px",
-  },
-  cardNote: {
-    color: "#aaa",
-    fontSize: "11px",
-    marginTop: "18px",
-    lineHeight: 1.5,
-  },
-  error: {
-    color: "#c22",
-    fontSize: "13px",
-    fontWeight: 700,
-  },
-  message: {
-    color: "#257b16",
-    fontSize: "13px",
-    fontWeight: 700,
-  },
-  footer: {
-    textAlign: "center",
-    marginTop: "30px",
-    fontSize: "10px",
-    letterSpacing: "1.5px",
-    color: "#888",
-  },
-
-  // Wallet styling
-  walletCard: {
-    background: "#fff",
-    color: "#111",
-    border: "2px solid #111",
-    borderRadius: "18px",
-    padding: "25px",
-    marginBottom: "22px",
     boxSizing: "border-box",
-    width: "100%",
+  },
+  stampCircleActive: {
+    background: "#45e017",
+    borderColor: "#45e017",
+    color: "#101010",
+  },
+  actionGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+    gap: 10,
+    marginTop: 16,
+  },
+  actionButton: {
+    background: "#222222",
+    color: "#45e017",
+    border: "1px solid #45e017",
+    borderRadius: 9,
+    padding: 14,
+    fontSize: 11,
+    fontWeight: 900,
+    cursor: "pointer",
+  },
+  walletCard: {
+    background: "#101010",
+    border: "1px solid #333333",
+    borderRadius: 14,
+    padding: 20,
+    marginTop: 25,
   },
   walletHeader: {
     display: "flex",
-    justifyContent: "space-between",
     alignItems: "center",
-    flexWrap: "wrap",
-    gap: "12px",
-  },
-  walletEyebrow: {
-    fontSize: "12px",
-    fontWeight: 900,
-    letterSpacing: "1px",
+    justifyContent: "space-between",
   },
   walletTitle: {
-    fontSize: "11px",
-    color: "#777",
-    fontWeight: 700,
-    marginTop: "15px",
-    marginBottom: "8px",
+    fontSize: 19,
+    fontWeight: 900,
+    margin: "5px 0",
   },
-  walletTag: {
-    background: "#dff5df",
-    color: "#087A32",
-    borderRadius: "20px",
-    padding: "5px 10px",
-    fontSize: "10px",
+  walletIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: "50%",
+    background: "#45e017",
+    color: "#101010",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: 24,
     fontWeight: 900,
   },
   walletBalance: {
-    fontSize: "32px",
+    fontSize: 38,
     fontWeight: 900,
-    color: "#087A32",
-    margin: "5px 0 22px",
-  },
-  walletLoading: {
-    fontSize: "13px",
-    color: "#777",
-    margin: "15px 0 22px",
+    letterSpacing: "-1px",
+    margin: "24px 0",
   },
   walletActions: {
     display: "grid",
     gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-    gap: "12px",
-    marginTop: "15px",
-    marginBottom: "22px",
+    gap: 10,
+    marginTop: 20,
   },
-  walletAction: {
+  walletActionButton: {
     display: "flex",
     flexDirection: "column",
     alignItems: "flex-start",
-    gap: "7px",
-    padding: "15px 12px",
-    background: "#fff",
-    color: "#111",
-    border: "1px solid #ddd",
-    borderRadius: "10px",
+    gap: 7,
+    background: "#191919",
+    border: "1px solid #444444",
+    borderRadius: 10,
+    color: "#ffffff",
+    padding: 14,
     textAlign: "left",
     cursor: "pointer",
-    minWidth: 0,
-  },
-  walletActionActive: {
-    border: "2px solid #111",
-    background: "#f3ffd6",
   },
   walletActionIcon: {
-    fontSize: "24px",
-    lineHeight: 1,
+    color: "#45e017",
+    fontSize: 24,
+    fontWeight: 900,
   },
   walletForm: {
-    background: "#f7f7f7",
-    border: "1px solid #ddd",
-    borderRadius: "12px",
-    padding: "18px",
-    marginBottom: "24px",
+    borderTop: "1px solid #333333",
+    marginTop: 24,
+    paddingTop: 18,
   },
   walletFormTitle: {
-    fontSize: "16px",
+    fontSize: 16,
     fontWeight: 900,
-    marginTop: 0,
   },
   walletHint: {
-    fontSize: "12px",
-    color: "#777",
+    color: "#999999",
+    fontSize: 12,
     lineHeight: 1.5,
   },
-  walletCancel: {
-    width: "100%",
-    padding: "14px",
-    background: "#fff",
-    color: "#111",
-    border: "1px solid #111",
-    borderRadius: "10px",
-    fontWeight: 900,
-    cursor: "pointer",
-    marginTop: "10px",
-  },
-  walletError: {
-    background: "#fff0f0",
-    color: "#b00020",
-    padding: "10px",
-    borderRadius: "8px",
-    fontSize: "13px",
-    fontWeight: 700,
-  },
-  walletSuccess: {
-    background: "#eaf8e9",
-    color: "#087A32",
-    padding: "10px",
-    borderRadius: "8px",
-    fontSize: "13px",
-    fontWeight: 700,
-  },
-  transactionHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: "10px",
-    marginTop: "20px",
-    marginBottom: "12px",
+  transactionSection: {
+    borderTop: "1px solid #333333",
+    marginTop: 25,
+    paddingTop: 20,
   },
   transactionTitle: {
-    fontSize: "16px",
+    fontSize: 13,
     fontWeight: 900,
-    margin: 0,
-  },
-  refreshButton: {
-    background: "#fff",
-    border: "1px solid #111",
-    borderRadius: "7px",
-    padding: "7px 10px",
-    fontSize: "10px",
-    fontWeight: 900,
-    cursor: "pointer",
+    letterSpacing: 1,
+    marginBottom: 15,
   },
   transactionRow: {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
-    gap: "12px",
-    padding: "14px 0",
-    borderTop: "1px solid #eee",
-    fontSize: "13px",
+    gap: 12,
+    padding: "13px 0",
+    borderBottom: "1px solid #292929",
   },
-  transactionDetails: {
+  transactionAmount: {
     display: "flex",
     flexDirection: "column",
-    gap: "5px",
-    minWidth: 0,
-  },
-  walletFootnote: {
-    color: "#888",
-    fontSize: "11px",
-    lineHeight: 1.5,
-    marginTop: "18px",
-    marginBottom: 0,
+    alignItems: "flex-end",
+    gap: 5,
+    whiteSpace: "nowrap",
   },
 };
