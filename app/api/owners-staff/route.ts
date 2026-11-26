@@ -112,6 +112,55 @@ export async function GET(request: NextRequest) {
 
     const { baseUrl, key } = getDatabaseSettings();
 
+    // If a staff ID is supplied, return that person's access history.
+    const requestedStaffId = request.nextUrl.searchParams.get("staffId");
+
+    if (requestedStaffId !== null) {
+      const staffId = Number(requestedStaffId);
+
+      if (
+        !Number.isInteger(staffId) ||
+        staffId < 1001 ||
+        staffId > 1020
+      ) {
+        return NextResponse.json(
+          { success: false, message: "Invalid staff ID" },
+          { status: 400 }
+        );
+      }
+
+      const historyUrl = new URL(
+        `${baseUrl}/rest/v1/staff_access_activity`
+      );
+
+      historyUrl.searchParams.set(
+        "select",
+        "id,staff_id,event_type,occurred_at"
+      );
+      historyUrl.searchParams.set("staff_id", `eq.${staffId}`);
+      historyUrl.searchParams.set("order", "occurred_at.desc");
+      historyUrl.searchParams.set("limit", "100");
+
+      const historyResponse = await fetch(historyUrl.toString(), {
+        headers: databaseHeaders(key),
+        cache: "no-store",
+      });
+
+      if (!historyResponse.ok) {
+        const error = await historyResponse.text();
+        console.error("Staff access history error:", error);
+        throw new Error("Unable to retrieve staff access history");
+      }
+
+      const activity = await historyResponse.json();
+
+      return NextResponse.json({
+        success: true,
+        activity,
+      });
+    }
+
+    // Existing behaviour: return all staff accounts.
     const response = await fetch(
       `${baseUrl}/rest/v1/staff_accounts?select=staff_id,is_active,pin_hash,created_at,updated_at,last_login_at&order=staff_id.asc`,
       {
