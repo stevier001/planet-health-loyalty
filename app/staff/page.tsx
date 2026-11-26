@@ -1,110 +1,95 @@
-    fontSize: 11,
-    fontWeight: 900,
-    cursor: "pointer",
-  },
-  walletCard: {
-    background: "#FFFFFF",
-    border: "1px solid #E0DAD3",
-    borderRadius: 14,
-    padding: 20,
-    marginTop: 25,
-    boxShadow: "0 5px 18px rgba(0,0,0,0.025)",
-  },
-  walletHeader: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  walletTitle: {
-    fontSize: 19,
-    fontWeight: 900,
-    margin: "5px 0",
-    color: "#111111",
-  },
-  walletIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: "50%",
-    background: "#45e017",
-    color: "#111111",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontSize: 24,
-    fontWeight: 900,
-  },
-  walletBalance: {
-    fontSize: 38,
-    fontWeight: 900,
-    letterSpacing: "-1px",
-    margin: "24px 0",
-    color: "#111111",
-  },
-  walletActions: {
-    display: "grid",
-    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-    gap: 10,
-    marginTop: 20,
-  },
-  walletActionButton: {
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "flex-start",
-    gap: 7,
-    background: "#FAF8F5",
-    border: "1px solid #E0DAD3",
-    borderRadius: 10,
-    color: "#111111",
-    padding: 14,
-    textAlign: "left",
-    cursor: "pointer",
-  },
-  walletActionIcon: {
-    color: "#269900",
-    fontSize: 24,
-    fontWeight: 900,
-  },
-  walletForm: {
-    borderTop: "1px solid #E0DAD3",
-    marginTop: 24,
-    paddingTop: 18,
-  },
-  walletFormTitle: {
-    fontSize: 16,
-    fontWeight: 900,
-    color: "#111111",
-  },
-  walletHint: {
-    color: "#77716B",
-    fontSize: 12,
-    lineHeight: 1.5,
-  },
-  transactionSection: {
-    borderTop: "1px solid #E0DAD3",
-    marginTop: 25,
-    paddingTop: 20,
-  },
-  transactionTitle: {
-    fontSize: 13,
-    fontWeight: 900,
-    letterSpacing: 1,
-    marginBottom: 15,
-    color: "#111111",
-  },
-  transactionRow: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: 12,
-    padding: "13px 0",
-    borderBottom: "1px solid #EAE5DF",
-    color: "#111111",
-  },
-  transactionAmount: {
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "flex-end",
-    gap: 5,
-    whiteSpace: "nowrap",
-  },
+
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+
+type Customer = {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  stamps: number;
 };
+
+type WalletTransaction = {
+  id: string;
+  transaction_type: "credit" | "debit";
+  amount_pence: number;
+  balance_after_pence: number;
+  description: string | null;
+  reference: string | null;
+  created_at: string;
+};
+
+type WalletMode = "credit" | "debit";
+
+export default function StaffPage() {
+  const [staffId, setStaffId] = useState("");
+  const [pin, setPin] = useState("");
+  const [authenticated, setAuthenticated] = useState(false);
+  const [checking, setChecking] = useState(true);
+  const [loginLoading, setLoginLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const [search, setSearch] = useState("");
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [selected, setSelected] = useState<Customer | null>(null);
+
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [stampLoading, setStampLoading] = useState(false);
+  const [redeemLoading, setRedeemLoading] = useState(false);
+  const [message, setMessage] = useState("");
+
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [scannerError, setScannerError] = useState("");
+
+  // Wallet state
+  const [balancePence, setBalancePence] = useState<number | null>(null);
+  const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
+  const [walletLoading, setWalletLoading] = useState(false);
+  const [walletError, setWalletError] = useState("");
+  const [walletMessage, setWalletMessage] = useState("");
+  const [walletMode, setWalletMode] = useState<WalletMode | null>(null);
+  const [walletAmount, setWalletAmount] = useState("");
+  const [walletDescription, setWalletDescription] = useState("");
+  const [walletTransactionLoading, setWalletTransactionLoading] =
+    useState(false);
+
+  const scannerRef = useRef<HTMLDivElement | null>(null);
+  const walletRequestNumber = useRef(0);
+  const pendingWalletRequest = useRef<string | null>(null);
+
+  function formatMoney(pence: number) {
+    return (pence / 100).toLocaleString("en-GB", {
+      style: "currency",
+      currency: "GBP",
+    });
+  }
+
+  // Check staff login session
+  useEffect(() => {
+    async function checkSession() {
+      try {
+        const response = await fetch("/api/staff-session", {
+          cache: "no-store",
+        });
+        setAuthenticated(response.ok);
+      } catch {
+        setAuthenticated(false);
+      } finally {
+        setChecking(false);
+      }
+    }
+
+    checkSession();
+  }, []);
+
+  // Load the selected customer's wallet
+  async function loadWallet(customerId: string) {
+    const requestNumber = ++walletRequestNumber.current;
+
+    setWalletLoading(true);
+    setWalletError("");
+    setWalletMessage("");
+    setBalancePence(null);
+    setTransactions([]);
