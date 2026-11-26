@@ -1,7 +1,9 @@
+
 "use client";
 
 import { useEffect, useState } from "react";
 import BirthdayInsights from "./birthday-insights";
+import StaffManagement from "./staff-management";
 
 type Customer = {
   id: string;
@@ -449,6 +451,9 @@ export default function OwnersDashboard() {
 
             {/* BIRTHDAY INSIGHTS */}
             <BirthdayInsights customers={loyaltyCustomers} />
+
+            {/* STAFF MANAGEMENT */}
+            <StaffManagement />
 
             {/* CUSTOMER OVERVIEW */}
             <section style={styles.section}>
@@ -998,61 +1003,61 @@ const styles: Record<string, React.CSSProperties> = {
   table: {
     width: "100%",
     borderCollapse: "collapse",
-    minWidth: "650px",
-    textAlign: "left",
   },
   th: {
-    padding: "16px 14px",
     background: "#111",
     color: "#B4FF00",
+    padding: "15px",
+    textAlign: "left",
     fontSize: "10px",
     letterSpacing: "1px",
   },
   td: {
-    padding: "17px 14px",
-    borderBottom: "1px solid #ddd",
+    padding: "15px",
+    borderBottom: "1px solid #eee",
     fontSize: "13px",
-    fontWeight: 600,
   },
   active: {
     display: "inline-block",
-    background: "#e5ffd0",
-    color: "#277400",
-    padding: "7px 9px",
-    borderRadius: "5px",
+    background: "#e8f8d8",
+    color: "#286000",
+    borderRadius: "20px",
+    padding: "6px 9px",
     fontSize: "9px",
-    fontWeight: 950,
-    whiteSpace: "nowrap",
+    fontWeight: 900,
   },
   reward: {
     display: "inline-block",
     background: "#B4FF00",
     color: "#111",
-    padding: "7px 9px",
-    borderRadius: "5px",
+    borderRadius: "20px",
+    padding: "6px 9px",
     fontSize: "9px",
-    fontWeight: 950,
-    whiteSpace: "nowrap",
+    fontWeight: 900,
   },
   redeemed: {
     display: "inline-block",
     background: "#111",
     color: "#B4FF00",
-    padding: "7px 9px",
-    borderRadius: "5px",
+    borderRadius: "20px",
+    padding: "6px 9px",
     fontSize: "9px",
-    fontWeight: 950,
-    whiteSpace: "nowrap",
+    fontWeight: 900,
   },
   scanned: {
     display: "inline-block",
-    background: "#e4f0ff",
-    color: "#164c86",
-    padding: "7px 9px",
-    borderRadius: "5px",
+    background: "#e5f0ff",
+    color: "#174a8b",
+    borderRadius: "20px",
+    padding: "6px 9px",
     fontSize: "9px",
-    fontWeight: 950,
-    whiteSpace: "nowrap",
+    fontWeight: 900,
+  },
+  empty: {
+    padding: "25px",
+    textAlign: "center",
+    color: "#777",
+    fontSize: "13px",
   },
   activityList: {
     background: "#fff",
@@ -1065,46 +1070,43 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: "space-between",
     alignItems: "center",
     gap: "15px",
-    padding: "18px",
-    borderBottom: "1px solid #ddd",
-    flexWrap: "wrap",
+    padding: "16px",
+    borderBottom: "1px solid #eee",
   },
   activityName: {
-    fontSize: "14px",
+    fontSize: "13px",
+    fontWeight: 900,
   },
   activityEmail: {
-    fontSize: "12px",
-    color: "#666",
+    fontSize: "11px",
+    color: "#777",
     marginTop: "4px",
   },
   activityDate: {
-    fontSize: "11px",
-    color: "#888",
+    fontSize: "10px",
+    color: "#999",
     marginTop: "5px",
   },
-  empty: {
-    padding: "25px",
-    color: "#777",
-    fontSize: "13px",
-  },
   message: {
-    padding: "40px",
-    background: "#111",
-    color: "#B4FF00",
+    background: "#fff",
+    border: "2px solid #111",
+    padding: "35px",
     textAlign: "center",
-    borderRadius: "10px",
     fontWeight: 900,
+    borderRadius: "10px",
   },
   error: {
-    padding: "25px",
     background: "#fff",
-    border: "2px solid #c22",
+    border: "2px solid #b00020",
+    color: "#b00020",
+    padding: "25px",
+    textAlign: "center",
+    fontWeight: 900,
     borderRadius: "10px",
-    color: "#c22",
   },
   retry: {
     display: "block",
-    marginTop: "15px",
+    margin: "15px auto 0",
     padding: "12px 18px",
     background: "#111",
     color: "#B4FF00",
