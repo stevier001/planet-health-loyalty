@@ -14,14 +14,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 2. Read and validate the request.
+    // 2. Read the exact fields sent by the staff portal.
     const body = await request.json();
 
     const customerId = body.customerId;
-    const transactionType = body.transactionType;
-    const amount = body.amount;
+    const transactionType = body.type;
+    const amountPence = body.amount;
     const description = body.description;
-    const idempotencyKey = body.idempotencyKey;
+    const idempotencyKey = body.requestId;
 
     if (
       typeof customerId !== "string" ||
@@ -43,12 +43,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // The staff portal already sends the amount in pence.
     if (
-      typeof amount !== "number" ||
-      !Number.isFinite(amount) ||
-      amount <= 0 ||
-      Math.round(amount * 100) !== amount * 100 ||
-      amount > 10000
+      typeof amountPence !== "number" ||
+      !Number.isSafeInteger(amountPence) ||
+      amountPence <= 0 ||
+      amountPence > 1000000
     ) {
       return NextResponse.json(
         { success: false, message: "Enter a valid amount up to £10,000" },
@@ -56,19 +56,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // The existing Supabase function accepts a text idempotency key.
     if (
       typeof idempotencyKey !== "string" ||
-      !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-        idempotencyKey
-      )
+      idempotencyKey.length < 16 ||
+      idempotencyKey.length > 200
     ) {
       return NextResponse.json(
         { success: false, message: "Invalid transaction key" },
         { status: 400 }
       );
     }
-
-    const amountPence = Math.round(amount * 100);
 
     if (
       description !== undefined &&
@@ -156,6 +154,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 5. Process the wallet transaction.
+    // Keep the existing Supabase function unchanged.
     const walletResponse = await fetch(
       `${supabaseUrl.replace(/\/$/, "")}/rest/v1/rpc/process_wallet_transaction`,
       {
@@ -186,7 +185,10 @@ export async function POST(request: NextRequest) {
 
     if (!walletResponse.ok) {
       const message = String(
-        walletData.message || walletData.details || ""
+        walletData.message ||
+          walletData.details ||
+          walletData.hint ||
+          ""
       );
 
       if (message.includes("Insufficient wallet balance")) {
